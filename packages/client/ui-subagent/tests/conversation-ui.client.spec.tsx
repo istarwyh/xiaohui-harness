@@ -230,6 +230,12 @@ describe('SubagentHeaderLineage', () => {
     vi.useFakeTimers()
     const view = render(<SubagentHeaderLineage {...props(catalog())} />)
     const trigger = screen.getByRole('button', { name: /2 个子代理/ })
+    const rect = vi.spyOn(trigger, 'getBoundingClientRect')
+    rect.mockReturnValue({
+      x: 24, y: 10, width: 100, height: 30,
+      top: 10, right: 124, bottom: 40, left: 24,
+      toJSON: () => ({}),
+    })
 
     fireEvent.click(trigger)
     expect(screen.queryByRole('tree')).toBeNull()
@@ -239,7 +245,26 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.queryByRole('tree')).toBeNull()
     await vi.advanceTimersByTimeAsync(1)
     const tree = screen.getByRole('tree')
+    expect(tree.style.top).toBe('45px')
+    rect.mockReturnValue({
+      x: 32, y: 40, width: 100, height: 40,
+      top: 40, right: 132, bottom: 80, left: 32,
+      toJSON: () => ({}),
+    })
+    // The menu-position listeners are passive effects. Flush their install
+    // before dispatch so Windows and POSIX coverage exercise the same path.
+    await act(async () => { await Promise.resolve() })
     fireEvent.resize(window)
+    expect(tree.style.top).toBe('85px')
+    expect(tree.style.left).toBe('32px')
+    rect.mockReturnValue({
+      x: 48, y: 80, width: 100, height: 40,
+      top: 80, right: 148, bottom: 120, left: 48,
+      toJSON: () => ({}),
+    })
+    fireEvent.scroll(document)
+    expect(tree.style.top).toBe('125px')
+    expect(tree.style.left).toBe('48px')
     fireEvent.mouseLeave(trigger.parentElement!)
     fireEvent.mouseEnter(tree)
     await vi.advanceTimersByTimeAsync(120)

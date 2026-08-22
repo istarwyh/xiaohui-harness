@@ -296,7 +296,11 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
         text: '$env:KEEP = "ok"; Set-Location /',
         submit: true,
       })
-      expect((await first.done).waitReason).toBe('stdin_read')
+      // The provider may publish pwsh's return to an input wait on either
+      // side of the silence bound under full-suite coverage load. Both
+      // readiness tiers mean the persistent shell accepted the turn and is
+      // ready for the next send; the state/output assertions below prove it.
+      expectReadyForNextSend((await first.done).waitReason)
       const second = ctx.terminals.startSend(agent, created.sessionId, {
         text: 'Write-Output "keep=$env:KEEP secret=$env:DSH_TEST_SECRET"',
         submit: true,
