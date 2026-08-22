@@ -113,6 +113,11 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
+    // PowerShell's interactive host asks the terminal for its cursor position
+    // before it accepts the first command on Linux. Initialize the terminal
+    // protocol and wait for that native prompt before queueing bootstrap input;
+    // otherwise the command bytes can be consumed as the terminal's reply.
+    await session.initialize(signal)
     // pwsh cannot install its prompt from the environment: write the prompt
     // function through the session and wait for the first marker prompt,
     // which is also the readiness contract of the bash initialize path. The

@@ -173,6 +173,25 @@ describe('LocalPtySession readiness and output', () => {
     expect((await operation.done).waitReason).toBe('stdin_read')
   })
 
+  it('answers a split cursor-position query before publishing shell readiness', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const session = new LocalPtySession(terminal, config())
+    const initializing = session.initialize()
+
+    terminal.emitData('\x1b[6')
+    await Promise.resolve()
+    expect(terminal.writes).toEqual([])
+    terminal.emitData('n')
+    await Promise.resolve()
+    expect(terminal.writes).toEqual(['\x1b[1;1R'])
+
+    terminal.emitData('PS /workspace> ')
+    await vi.advanceTimersByTimeAsync(60)
+    await initializing
+    expect(session.motd).toBe('PS /workspace> ')
+  })
+
   it('discards prompt readiness observed during asynchronous pre-write inspection', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()
@@ -187,7 +206,7 @@ describe('LocalPtySession readiness and output', () => {
 
     terminal.emitData('\x1b]133;D;0\x07dsh> ')
     inspection.resolve({ processGroupId: 456, inputWaiting: true })
-    await vi.advanceTimersByTimeAsync(20)
+    await vi.advanceTimersByTimeAsync(60)
     expect(terminal.writes).toEqual(['long-running-command\r'])
     expect(settled).toBe(false)
 
@@ -272,6 +291,8 @@ describe('LocalPtySession readiness and output', () => {
     inspector.pgid = undefined
 
     const inferred = session.startSend({ text: 'sleep', submit: false })
+    await Promise.resolve()
+    await Promise.resolve()
     terminal.emitData('working')
     expect(inferred.readOutput()).toEqual({ delta: 'working', truncated: false })
     await vi.advanceTimersByTimeAsync(60)
@@ -887,6 +908,8 @@ describe('LocalPtySession readiness and output', () => {
     await initialize(session, terminal)
 
     const operation = session.startSend({ text: 'bash -i', submit: true })
+    await Promise.resolve()
+    await Promise.resolve()
     inspector.pgid = 789
     terminal.emitData('\x1b]133;D;0\x07child> ')
     await vi.advanceTimersByTimeAsync(100)
