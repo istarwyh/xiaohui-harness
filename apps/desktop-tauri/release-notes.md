@@ -1,41 +1,29 @@
-# DeepSeek Harness Desktop 0.1.1-rc.1-0.1
+# XiaoHui Harness 0.2.0
 
 ## English
 
-DeepSeek Harness Desktop is a Tauri/WebView shell for the existing `dsh web` interface.
+- macOS Apple Silicon desktop workbench based on DeepSeek Harness and the Sakana Tauri shell.
+- Bundles `dsh-harbor-evolution@0.6.0`, its `evolve-agent-with-harbor` Skill, portable CPython 3.12, and `harbor-dsh-evolution==0.6.0`.
+- Bundles `dsh-codex-auth@0.3.0` for the local Codex login, LLM, Search, and Image capabilities.
+- Bundles `dsh-better-sidebar@0.15.1` for files, editing, terminal, Git, background tasks, and extensible workbench panels.
+- Uses a frozen product lockfile, checksum-verified compressed offline pnpm store, and pinned macOS arm64 Node/pnpm toolchain; first launch needs no npm or Node-mirror access.
+- Brands the Web workbench as XiaoHui Harness and validates the release Tag against every desktop version source.
+- Adds CSP and no-referrer protection to the desktop shell and served workbench.
+- Uses an isolated XiaoHui home and workspace instead of adopting `~/.dsh`.
+- Publishes a DMG and signed Tauri updater artifacts through GitHub Actions.
 
-The installer contains a trimmed Harness source tree without `node_modules`. On first launch, the app scans the host for Node / pnpm and an existing `~/.dsh` home, downloads only what is missing, starts the local Harness web host, and opens it in the desktop WebView.
-
-### What's new
-
-- Refreshes the bundled Harness source to upstream `dsh@0.1.1-rc.1`, with the upstream changes since 0.1.0-rc.8 to the agent loop, web UI, and tools.
-- Keeps the earlier desktop provisioning guarantees: derived workspace declarations, bootable-tree fallback when provisioning fails, install deadlines, and harness-tree cleanup.
-- Windows installation closes a running desktop process before replacing files and refreshes an existing desktop shortcut with the versioned DeepSeek fish icon.
-
-### Included builds
-
-- Windows x64 and x86 NSIS installers
-- macOS Intel and Apple Silicon DMGs
-- Linux x64 AppImage and deb packages
-
-These artifacts are not operating-system code-signed or notarized. Windows SmartScreen, macOS Gatekeeper, or Linux desktop security prompts may require explicit approval.
+The application is not yet signed or notarized with an Apple Developer identity.
 
 ## 中文
 
-DeepSeek Harness Desktop 是现有 `dsh web` 界面的 Tauri/WebView 外壳。
+- 基于 DeepSeek Harness 与 Sakana Tauri 桌面壳构建 macOS Apple Silicon AI 工作台。
+- 内置 `dsh-harbor-evolution@0.6.0`、`evolve-agent-with-harbor` Skill、便携式 CPython 3.12 和 `harbor-dsh-evolution==0.6.0`。
+- 内置 `dsh-codex-auth@0.3.0`，提供本机 Codex 登录、LLM、搜索与图像能力。
+- 内置 `dsh-better-sidebar@0.15.1`，提供文件、编辑、终端、Git、后台任务与可扩展工作台面板。
+- 使用冻结的产品 Lockfile、经过校验和验证的压缩离线 pnpm Store，以及固定的 macOS arm64 Node/pnpm 工具链；首次启动无需访问 npm 或 Node 镜像。
+- Web 工作台统一使用 XiaoHui Harness 品牌，并在发布前校验 Tag 与全部桌面版本来源一致。
+- 为桌面 Shell 与工作台页面增加 CSP 和 `no-referrer` 保护。
+- 使用独立的 XiaoHui 主目录与工作区，不接管 `~/.dsh`。
+- 通过 GitHub Actions 发布 DMG 和带签名的 Tauri 更新产物。
 
-安装包包含裁剪后的 Harness 源码树，不含 `node_modules`。首次启动会扫描本机 Node / pnpm 和已有 `~/.dsh` 主目录，只下载缺失部分，然后启动本地 Harness Web Host，并在桌面 WebView 中打开。
-
-### 更新内容
-
-- 内置 Harness 源码更新至上游 `dsh@0.1.1-rc.1`，包含 0.1.0-rc.8 以来上游对 agent 循环、Web 界面和工具的更新。
-- 保留既有的桌面预配保障：workspace 声明派生、预配失败时回退到可启动树、安装期限与 harness 树清理。
-- Windows 安装会先关闭正在运行的桌面进程再替换文件，并用带版本号的 DeepSeek 鱼形图标刷新已有桌面快捷方式。
-
-### 包含的构建
-
-- Windows x64 和 x86 NSIS 安装包
-- macOS Intel 和 Apple Silicon DMG
-- Linux x64 AppImage 和 deb 包
-
-这些产物没有操作系统代码签名，也未经过 notarization。Windows SmartScreen、macOS Gatekeeper 或 Linux 桌面安全提示可能要求用户明确批准。
+当前应用尚未使用 Apple Developer 身份完成代码签名与公证。

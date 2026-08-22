@@ -52,6 +52,7 @@ pub enum Msg {
     StatusReusedPnpm,
     StatusInstallPnpm,
     StatusInstallDeps,
+    StatusProductRuntime,
     StatusCheckProfile,
     StatusStartWeb,
     StatusDetectWsl,
@@ -163,15 +164,16 @@ fn zh(msg: Msg) -> &'static str {
         Msg::SplashPreparing => "正在准备运行环境…",
         Msg::SplashBootFailed => "启动失败",
         Msg::StatusLocalRepo => "使用本地仓库…",
-        Msg::StatusMatchingHome => "正在匹配已有对话与密钥…",
+        Msg::StatusMatchingHome => "正在准备 XiaoHui 独立工作台…",
         Msg::StatusRuntimeReady => "运行环境已就绪",
         Msg::StatusScanToolchain => "正在扫描本机 Node / pnpm…",
         Msg::StatusExtractHarness => "正在释放 harness 源码…",
         Msg::StatusReusedNode => "已复用本机 Node，跳过下载",
-        Msg::StatusDownloadNode => "正在从镜像下载 Node {0}…",
+        Msg::StatusDownloadNode => "正在准备内置 Node {0} 运行时…",
         Msg::StatusReusedPnpm => "已复用本机 pnpm",
-        Msg::StatusInstallPnpm => "正在安装 pnpm {0}…",
-        Msg::StatusInstallDeps => "正在从镜像安装依赖 (pnpm install --prod --no-frozen-lockfile)…",
+        Msg::StatusInstallPnpm => "正在准备内置 pnpm {0}…",
+        Msg::StatusInstallDeps => "正在从内置离线 Store 安装冻结的生产依赖…",
+        Msg::StatusProductRuntime => "正在加载 XiaoHui 的 Harbor 插件与 Skill…",
         Msg::StatusCheckProfile => "正在检查 profile 依赖…",
         Msg::StatusStartWeb => "正在启动 Web 界面…",
         Msg::StatusDetectWsl => "正在检测 WSL…",
@@ -179,13 +181,13 @@ fn zh(msg: Msg) -> &'static str {
         Msg::StatusWritePath => "正在写入 dsh 命令并加入 PATH…",
         Msg::StatusCheckUpdate => "正在检查桌面更新…",
         Msg::StatusDownloadUpdate => "正在下载桌面更新 {0}…",
-        Msg::StatusHomeNone => "未发现已有对话，将使用桌面端主目录",
+        Msg::StatusHomeNone => "已启用 XiaoHui 独立主目录",
         Msg::StatusHomeMatched => "已匹配已有主目录 {0}",
         Msg::StatusHomeRestored => "已恢复 {0} 项历史数据到 {1}",
         Msg::StatusScanMatchedBoth => "已匹配本机 Node {0}，跳过运行时下载",
         Msg::StatusScanMatchedNode => "已匹配本机 Node {0}，将仅安装 pnpm",
-        Msg::StatusScanMissingNode => "未找到兼容 Node，将下载运行时并复用本机 pnpm",
-        Msg::StatusScanMissingBoth => "未找到兼容 Node / pnpm，将从镜像下载",
+        Msg::StatusScanMissingNode => "未找到兼容 Node，将启用内置运行时并复用本机 pnpm",
+        Msg::StatusScanMissingBoth => "未找到兼容 Node / pnpm，将启用安装包内置工具链",
         Msg::WslMissing => "未检测到 WSL。请安装 WSL2 后再将运行环境设为 WSL。",
         Msg::Wsl1Only => "当前发行版是 WSL1。请执行 wsl --set-version <发行版> 2。",
         Msg::WslDockerDefault => {
@@ -212,7 +214,7 @@ fn zh(msg: Msg) -> &'static str {
         Msg::UpdaterCurrent => "当前已是最新版本",
         Msg::NotifyTitle => "任务完成",
         Msg::NotifySessionDone => "会话 {0} 已完成",
-        Msg::NotifyBody => "DeepSeek Harness 已完成本轮任务",
+        Msg::NotifyBody => "XiaoHui Harness 已完成本轮任务",
         Msg::ProfileInstalling => "正在安装 profile {0} 依赖…",
         Msg::ProfileReady => "profile {0} 依赖已就绪",
         Msg::ProfileInstallFailed => {
@@ -248,17 +250,18 @@ fn en(msg: Msg) -> &'static str {
         Msg::SplashPreparing => "Preparing the runtime…",
         Msg::SplashBootFailed => "Startup failed",
         Msg::StatusLocalRepo => "Using the local repository…",
-        Msg::StatusMatchingHome => "Matching existing sessions and credentials…",
+        Msg::StatusMatchingHome => "Preparing XiaoHui's isolated workbench…",
         Msg::StatusRuntimeReady => "Runtime is ready",
         Msg::StatusScanToolchain => "Scanning this machine for Node / pnpm…",
         Msg::StatusExtractHarness => "Unpacking harness source…",
         Msg::StatusReusedNode => "Reusing this machine's Node; skip download",
-        Msg::StatusDownloadNode => "Downloading Node {0} from the mirror…",
+        Msg::StatusDownloadNode => "Preparing the bundled Node {0} runtime…",
         Msg::StatusReusedPnpm => "Reusing this machine's pnpm",
-        Msg::StatusInstallPnpm => "Installing pnpm {0}…",
+        Msg::StatusInstallPnpm => "Preparing bundled pnpm {0}…",
         Msg::StatusInstallDeps => {
-            "Installing dependencies from the mirror (pnpm install --prod --no-frozen-lockfile)…"
+            "Installing frozen production dependencies from the bundled offline store…"
         }
+        Msg::StatusProductRuntime => "Loading XiaoHui's Harbor plugin and Skill…",
         Msg::StatusCheckProfile => "Checking profile dependencies…",
         Msg::StatusStartWeb => "Starting the web UI…",
         Msg::StatusDetectWsl => "Detecting WSL…",
@@ -266,15 +269,17 @@ fn en(msg: Msg) -> &'static str {
         Msg::StatusWritePath => "Writing the dsh command and updating PATH…",
         Msg::StatusCheckUpdate => "Checking for desktop updates…",
         Msg::StatusDownloadUpdate => "Downloading desktop update {0}…",
-        Msg::StatusHomeNone => "No existing sessions found; using the desktop home",
+        Msg::StatusHomeNone => "Using XiaoHui's isolated home",
         Msg::StatusHomeMatched => "Matched existing home {0}",
         Msg::StatusHomeRestored => "Restored {0} history items into {1}",
         Msg::StatusScanMatchedBoth => "Matched this machine's Node {0}; skip runtime download",
         Msg::StatusScanMatchedNode => "Matched this machine's Node {0}; will install pnpm only",
         Msg::StatusScanMissingNode => {
-            "No compatible Node found; will download the runtime and reuse this machine's pnpm"
+            "No compatible Node found; will use the bundled runtime and reuse this machine's pnpm"
         }
-        Msg::StatusScanMissingBoth => "No compatible Node / pnpm found; will download from the mirror",
+        Msg::StatusScanMissingBoth => {
+            "No compatible Node / pnpm found; will use the toolchain bundled with the installer"
+        }
         Msg::WslMissing => "WSL was not detected. Install WSL2, then set the runtime to WSL.",
         Msg::Wsl1Only => "This distro is WSL1. Run wsl --set-version <distro> 2.",
         Msg::WslDockerDefault => {
@@ -307,7 +312,7 @@ fn en(msg: Msg) -> &'static str {
         Msg::UpdaterCurrent => "You are already on the latest version",
         Msg::NotifyTitle => "Task complete",
         Msg::NotifySessionDone => "Session {0} finished",
-        Msg::NotifyBody => "DeepSeek Harness finished this turn",
+        Msg::NotifyBody => "XiaoHui Harness finished this turn",
         Msg::ProfileInstalling => "Installing profile {0} dependencies…",
         Msg::ProfileReady => "Profile {0} dependencies are ready",
         Msg::ProfileInstallFailed => {

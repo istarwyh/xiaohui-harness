@@ -350,6 +350,7 @@ describe('BashTerminalBackend startup rollback', () => {
     let sent: TerminalSendRequest | undefined
     const session = {
       motd: '',
+      initialize: async () => {},
       startSend: (request: TerminalSendRequest) => {
         sent = request
         return {
@@ -386,6 +387,7 @@ describe('BashTerminalBackend startup rollback', () => {
     const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
+      initialize: async () => {},
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
         const second = sends.length > 1
@@ -418,6 +420,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sessionFor = (waitReason: TerminalWaitReason): LocalPtySession => ({
+      initialize: async () => {},
       startSend: () => ({
         done: Promise.resolve({
           viewport: 'no-prompt', waitReason,
@@ -440,8 +443,10 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sends: TerminalSendRequest[] = []
+    let initializedWith: AbortSignal | undefined
     const session = {
       motd: '',
+      initialize: async (signal?: AbortSignal) => { initializedWith = signal },
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
         return {
@@ -464,6 +469,7 @@ describe('BashTerminalBackend startup rollback', () => {
     const signal = new AbortController().signal
     const spawned = await backend.spawn({ ...spec(agent(ctx)), signal })
     expect(spawned.motd).toBe('dsh> ')
+    expect(initializedWith).toBe(signal)
     expect(sends).toHaveLength(1)
     expect(sends[0]?.signal).toBe(signal)
   })

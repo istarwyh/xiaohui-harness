@@ -4,6 +4,7 @@ mod desktop_settings;
 mod i18n;
 mod notify;
 mod overlay;
+mod product;
 mod runtime;
 mod tray;
 mod updater;
@@ -156,7 +157,7 @@ async fn boot_app(app: AppHandle, bundled: Option<PathBuf>) -> Result<(), String
         boot_log::error(&format!("plugins disabled by rescue patch: {names}"));
         notify::toast(
             &app,
-            "DeepSeek Harness",
+            "XiaoHui Harness",
             &i18n::tf(Msg::PluginsDisabled, &names),
         );
     }
@@ -209,18 +210,23 @@ async fn boot_windows_runtime(
         }
     };
 
-    let overlay_src = overlay::resolve_overlay_source(app.path().resource_dir().ok().as_deref());
-    let host_overlay = notify.and_then(|notify| {
-        match overlay::install_overlay(&paths, &overlay_src, &notify.url) {
-            Ok(implanted) => Some(HostOverlay {
-                patch_file: implanted.patch_file,
-                notify_url: notify.url.clone(),
-            }),
-            Err(error) => {
-                boot_log::info(&format!("overlay skipped: {error}"));
-                None
-            }
-        }
+    progress(ProvisionEvent::Status(
+        i18n::t(Msg::StatusProductRuntime).into(),
+    ));
+    let resource_dir = app.path().resource_dir().ok();
+    let product = product::resolve(resource_dir.as_deref())?;
+    boot_log::info(&format!(
+        "XiaoHui product runtime ready harbor={} integration={}",
+        product.harbor_bin.display(),
+        product.integration_version
+    ));
+
+    let overlay_src = overlay::resolve_overlay_source(resource_dir.as_deref());
+    let notify_url = notify.map(|server| server.url.as_str()).unwrap_or("");
+    let implanted = overlay::install_overlay(&paths, &overlay_src, notify_url, &product)?;
+    let host_overlay = Some(HostOverlay {
+        patch_file: implanted.patch_file,
+        notify_url: notify_url.to_string(),
     });
 
     DesktopRuntime::start(paths, host_overlay.as_ref(), progress).await

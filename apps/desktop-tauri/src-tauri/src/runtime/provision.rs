@@ -6,21 +6,21 @@ use std::time::{Duration, Instant, SystemTime};
 
 use flate2::read::GzDecoder;
 use futures_util::StreamExt;
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha512};
 use tar::Archive;
 use zip::ZipArchive;
 
 use super::boot_log;
 use super::config::{
-    dev_launch_mode, node_mirror_base, npm_registry, DEFAULT_NODE_VERSION, DEFAULT_PNPM_VERSION,
-    HARNESS_VERSIONS_DIR,
+    dev_launch_mode, node_mirror_base, npm_registry, BUNDLED_NODE_ARCHIVE, BUNDLED_NODE_SHA256,
+    BUNDLED_PNPM_ARCHIVE, BUNDLED_PNPM_SHA512, BUNDLED_TOOLCHAIN_DIR, DEFAULT_NODE_VERSION,
+    DEFAULT_PNPM_VERSION, HARNESS_VERSIONS_DIR, OFFLINE_PNPM_STORE_ARCHIVE, OFFLINE_PNPM_STORE_DIR,
 };
 use super::host_env::{
     node_binary_compatible, pnpm_binary_usable, scan_host_toolchain, toolchain_status,
 };
 use super::io_fallback::{is_recoverable_io, recoverable_message};
 use super::process::hide_console;
-use super::user_home::{resolve_user_home, user_home_status};
 use super::{app_data_root, ProvisionEvent};
 use crate::i18n::{self, Msg};
 
@@ -51,7 +51,6 @@ const NODE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// for a failed provision, and one spare for an older still-running Host.
 const HARNESS_TREES_KEPT: usize = 3;
 
-
 /// Node distribution archive coordinates for a given OS/arch.
 #[derive(Debug)]
 pub(crate) struct NodeArchiveSpec {
@@ -75,6 +74,9 @@ pub async fn ensure_runtime(
     }
 
     let bundled = bundled_source.ok_or_else(|| i18n::t(Msg::BootMissingBundle).to_string())?;
+    let bundled_toolchain = bundled
+        .parent()
+        .map(|parent| parent.join(BUNDLED_TOOLCHAIN_DIR));
 
     let runtime_root = app_data_root()?.join("runtime");
     let node_dir = runtime_root.join("node");
@@ -97,12 +99,10 @@ pub async fn ensure_runtime(
         i18n::t(Msg::StatusMatchingHome).into(),
     ));
     progress(ProvisionEvent::Progress(8));
-    let user_home = resolve_user_home(&isolated_home);
-    let dsh_home = user_home.path.clone();
-    progress(ProvisionEvent::Status(user_home_status(
-        &user_home,
-        &isolated_home,
-    )));
+    let dsh_home = isolated_home;
+    fs::create_dir_all(&dsh_home)
+        .map_err(|e| format!("cannot create XiaoHui home {}: {e}", dsh_home.display()))?;
+    progress(ProvisionEvent::Status(i18n::t(Msg::StatusHomeNone).into()));
 
     if manifest_ready(&manifest_path, &bundled, &harness_root, &cli_entry) {
         boot_log::info("provision skipped: manifest ready");
@@ -178,12 +178,21 @@ pub async fn ensure_runtime(
             DEFAULT_NODE_VERSION,
         )));
         progress(ProvisionEvent::Progress(15));
-        if let Err(error) = fetch_node(&node_dir, DEFAULT_NODE_VERSION, &progress).await {
-            boot_log::info(&format!("node download fallback: {error}"));
-            if preferred_node.is_file() {
+        let bundled_result = bundled_toolchain
+            .as_deref()
+            .ok_or_else(|| "bundled toolchain directory is missing".to_string())
+            .and_then(|root| install_bundled_node(root, &node_dir, DEFAULT_NODE_VERSION));
+        if let Err(bundled_error) = bundled_result {
+            boot_log::info(&format!("bundled Node fallback: {bundled_error}"));
+            if let Err(error) = fetch_node(&node_dir, DEFAULT_NODE_VERSION, &progress).await {
+                boot_log::info(&format!("node download fallback: {error}"));
+                if preferred_node.is_file() {
+                    node_binary = preferred_node;
+                } else if !is_recoverable_io(&error) {
+                    return Err(error);
+                }
+            } else {
                 node_binary = preferred_node;
-            } else if !is_recoverable_io(&error) {
-                return Err(error);
             }
         } else {
             node_binary = preferred_node;
@@ -202,7 +211,12 @@ pub async fn ensure_runtime(
             DEFAULT_PNPM_VERSION,
         )));
         progress(ProvisionEvent::Progress(35));
-        if let Err(error) = install_pnpm(&node_binary, &pnpm_home, DEFAULT_PNPM_VERSION) {
+        if let Err(error) = install_pnpm(
+            &node_binary,
+            &pnpm_home,
+            DEFAULT_PNPM_VERSION,
+            bundled_toolchain.as_deref(),
+        ) {
             boot_log::info(&format!("pnpm install fallback: {error}"));
             if preferred_pnpm.is_file() {
                 pnpm_binary = preferred_pnpm;
@@ -319,8 +333,9 @@ fn resolve_local_repo() -> Result<RuntimePaths, String> {
         }
     });
 
-    let isolated_home = app_data_root()?.join("dsh-home");
-    let dsh_home = resolve_user_home(&isolated_home).path;
+    let dsh_home = app_data_root()?.join("dsh-home");
+    fs::create_dir_all(&dsh_home)
+        .map_err(|e| format!("cannot create XiaoHui home {}: {e}", dsh_home.display()))?;
 
     Ok(RuntimePaths {
         node_binary,
@@ -413,7 +428,8 @@ pub fn try_recover_paths(bundled: Option<&Path>) -> Option<RuntimePaths> {
     if !cli_entry.is_file() {
         return None;
     }
-    let dsh_home = resolve_user_home(&isolated_home).path;
+    let dsh_home = isolated_home;
+    fs::create_dir_all(&dsh_home).ok()?;
     Some(RuntimePaths {
         node_binary,
         pnpm_binary,
@@ -446,11 +462,7 @@ fn mtime_of(path: &Path) -> SystemTime {
 /// Order candidate harness trees newest first so recovery prefers the most
 /// recently provisioned tree; equal timestamps fall back to name order.
 fn sort_harness_trees_newest_first(dirs: &mut [PathBuf]) {
-    dirs.sort_by(|a, b| {
-        mtime_of(b)
-            .cmp(&mtime_of(a))
-            .then_with(|| b.cmp(a))
-    });
+    dirs.sort_by(|a, b| mtime_of(b).cmp(&mtime_of(a)).then_with(|| b.cmp(a)));
 }
 
 fn find_existing_harness(app_root: &Path) -> Option<PathBuf> {
@@ -565,7 +577,7 @@ fn write_manifest(
             .unwrap_or(0),
         "nodeMirror": node_mirror_base(),
         "npmRegistry": npm_registry(),
-        "method": "bundled-source-pnpm-install",
+        "method": "bundled-offline-toolchain-and-frozen-store",
     });
     fs::write(
         path,
@@ -644,6 +656,53 @@ fn file_sha256(path: &Path) -> Result<String, String> {
         hasher.update(&buf[..n]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+fn file_sha512(path: &Path) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|e| format!("无法读取 {}: {e}", path.display()))?;
+    let mut hasher = Sha512::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn install_bundled_node(
+    toolchain_root: &Path,
+    node_dir: &Path,
+    version: &str,
+) -> Result<(), String> {
+    let spec = node_archive_spec(version)?;
+    if spec.archive_name != BUNDLED_NODE_ARCHIVE || spec.kind != ArchiveKind::TarGz {
+        return Err(format!(
+            "bundled Node archive does not support this platform: {}",
+            spec.archive_name
+        ));
+    }
+
+    let archive_path = toolchain_root.join(BUNDLED_NODE_ARCHIVE);
+    if !archive_path.is_file() {
+        return Err(format!(
+            "bundled Node archive is missing: {}",
+            archive_path.display()
+        ));
+    }
+    let actual = file_sha256(&archive_path)?;
+    if actual != BUNDLED_NODE_SHA256 {
+        return Err(format!(
+            "bundled Node checksum mismatch: expected {BUNDLED_NODE_SHA256}, got {actual}"
+        ));
+    }
+
+    if node_dir.exists() {
+        fs::remove_dir_all(node_dir).map_err(|e| e.to_string())?;
+    }
+    extract_node_tar_gz(&archive_path, node_dir, &spec.inner_folder)
 }
 
 async fn fetch_node(
@@ -848,9 +907,7 @@ fn wait_status_with_timeout(
     timeout: Duration,
     label: &str,
 ) -> Result<std::process::ExitStatus, String> {
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("{label} 启动失败: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| format!("{label} 启动失败: {e}"))?;
     wait_child_with_timeout(&mut child, timeout, label)
 }
 
@@ -876,13 +933,30 @@ fn wait_child_with_timeout(
     }
 }
 
-fn install_pnpm(node_binary: &Path, pnpm_home: &Path, version: &str) -> Result<(), String> {
+fn install_pnpm(
+    node_binary: &Path,
+    pnpm_home: &Path,
+    version: &str,
+    bundled_toolchain: Option<&Path>,
+) -> Result<(), String> {
     if pnpm_home.exists() {
         fs::remove_dir_all(pnpm_home).map_err(|e| e.to_string())?;
     }
     fs::create_dir_all(pnpm_home).map_err(|e| e.to_string())?;
 
-    let spec = format!("pnpm@{version}");
+    let bundled_archive = bundled_toolchain.map(|root| root.join(BUNDLED_PNPM_ARCHIVE));
+    let spec = if let Some(archive) = bundled_archive.as_ref().filter(|path| path.is_file()) {
+        let actual = file_sha512(archive)?;
+        if actual != BUNDLED_PNPM_SHA512 {
+            return Err(format!(
+                "bundled pnpm checksum mismatch: expected {BUNDLED_PNPM_SHA512}, got {actual}"
+            ));
+        }
+        archive.display().to_string()
+    } else {
+        format!("pnpm@{version}")
+    };
+    let offline = bundled_archive.as_ref().is_some_and(|path| path.is_file());
     let registry = npm_registry();
     let status = if let Some(npm_cli) = find_npm_cli(node_binary) {
         let mut cmd = Command::new(node_binary);
@@ -892,11 +966,14 @@ fn install_pnpm(node_binary: &Path, pnpm_home: &Path, version: &str) -> Result<(
             .arg(&spec)
             .arg("--prefix")
             .arg(pnpm_home)
-            .arg("--registry")
-            .arg(&registry)
             .arg("--no-audit")
             .arg("--no-fund")
             .arg("--loglevel=error");
+        if offline {
+            cmd.arg("--offline");
+        } else {
+            cmd.arg("--registry").arg(&registry);
+        }
         add_node_to_path(&mut cmd, node_binary)?;
         hide_console(&mut cmd);
         wait_status_with_timeout(&mut cmd, PNPM_GLOBAL_INSTALL_TIMEOUT, "pnpm 安装")?
@@ -915,11 +992,14 @@ fn install_pnpm(node_binary: &Path, pnpm_home: &Path, version: &str) -> Result<(
             .arg(&spec)
             .arg("--prefix")
             .arg(pnpm_home)
-            .arg("--registry")
-            .arg(&registry)
             .arg("--no-audit")
             .arg("--no-fund")
             .arg("--loglevel=error");
+        if offline {
+            cmd.arg("--offline");
+        } else {
+            cmd.arg("--registry").arg(&registry);
+        }
         add_node_to_path(&mut cmd, node_binary)?;
         hide_console(&mut cmd);
         wait_status_with_timeout(&mut cmd, PNPM_GLOBAL_INSTALL_TIMEOUT, "pnpm 安装")?
@@ -927,7 +1007,7 @@ fn install_pnpm(node_binary: &Path, pnpm_home: &Path, version: &str) -> Result<(
 
     if !status.success() {
         return Err(format!(
-            "npm install -g {spec} 失败 (exit {status}); registry={registry}"
+            "npm install -g {spec} 失败 (exit {status}); offline={offline}; registry={registry}"
         ));
     }
 
@@ -969,22 +1049,75 @@ fn configure_pnpm_install(
     cmd: &mut Command,
     node_binary: &Path,
     harness_root: &Path,
-    registry: &str,
 ) -> Result<(), String> {
+    let store = harness_root.join(OFFLINE_PNPM_STORE_DIR);
+    if !store.is_dir() {
+        return Err(format!(
+            "offline pnpm store is missing: {}",
+            store.display()
+        ));
+    }
     cmd.arg("install")
         .arg("--prod")
-        .arg("--no-frozen-lockfile")
-        .arg("--registry")
-        .arg(registry)
+        .arg("--frozen-lockfile")
+        .arg("--offline")
+        .arg("--store-dir")
+        .arg(&store)
         .current_dir(harness_root)
-        .env("NPM_CONFIG_REGISTRY", registry)
-        .env("npm_config_registry", registry)
         .env_remove("CI")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     add_node_to_path(cmd, node_binary)?;
     hide_console(cmd);
     Ok(())
+}
+
+fn prepare_offline_pnpm_store(harness_root: &Path) -> Result<(), String> {
+    let archive_path = harness_root.join(OFFLINE_PNPM_STORE_ARCHIVE);
+    let store = harness_root.join(OFFLINE_PNPM_STORE_DIR);
+    let manifest_path = harness_root.join(".bundle-manifest.json");
+    if !archive_path.is_file() {
+        return Err(format!(
+            "offline pnpm store archive is missing: {}",
+            archive_path.display()
+        ));
+    }
+
+    let raw = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("cannot read {}: {e}", manifest_path.display()))?;
+    let manifest: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("invalid {}: {e}", manifest_path.display()))?;
+    let expected = manifest["offlineStore"]["archiveSha256"]
+        .as_str()
+        .ok_or_else(|| {
+            "offline store archive digest is missing from bundle manifest".to_string()
+        })?;
+    let actual = file_sha256(&archive_path)?;
+    if actual != expected {
+        return Err(format!(
+            "offline pnpm store archive checksum mismatch: expected {expected}, got {actual}"
+        ));
+    }
+
+    if store.exists() {
+        fs::remove_dir_all(&store).map_err(|e| e.to_string())?;
+    }
+    extract_node_tar_gz(&archive_path, &store, OFFLINE_PNPM_STORE_DIR)
+}
+
+fn cleanup_offline_pnpm_store(harness_root: &Path) {
+    let store = harness_root.join(OFFLINE_PNPM_STORE_DIR);
+    let archive = harness_root.join(OFFLINE_PNPM_STORE_ARCHIVE);
+    if let Err(error) = fs::remove_dir_all(&store) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            boot_log::info(&format!("offline store cleanup skipped: {error}"));
+        }
+    }
+    if let Err(error) = fs::remove_file(&archive) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            boot_log::info(&format!("offline store archive cleanup skipped: {error}"));
+        }
+    }
 }
 
 pub(crate) fn pnpm_js_entry(pnpm_binary: &Path) -> Option<PathBuf> {
@@ -1004,7 +1137,7 @@ fn pnpm_install_harness(
     pnpm_binary: &Path,
     harness_root: &Path,
 ) -> Result<(), String> {
-    let registry = npm_registry();
+    prepare_offline_pnpm_store(harness_root)?;
     let mut cmd = if let Some(entry) = pnpm_js_entry(pnpm_binary) {
         let mut cmd = Command::new(node_binary);
         cmd.arg(entry);
@@ -1014,7 +1147,7 @@ fn pnpm_install_harness(
     } else {
         return Err(format!("pnpm entry is missing: {}", pnpm_binary.display()));
     };
-    configure_pnpm_install(&mut cmd, node_binary, harness_root, &registry)?;
+    configure_pnpm_install(&mut cmd, node_binary, harness_root)?;
 
     let mut child = cmd
         .spawn()
@@ -1023,8 +1156,7 @@ fn pnpm_install_harness(
     // fill the OS pipe buffer and block the child before a deadline can fire.
     let stdout_handle = spawn_pipe_reader(child.stdout.take());
     let stderr_handle = spawn_pipe_reader(child.stderr.take());
-    let status =
-        wait_child_with_timeout(&mut child, PNPM_HARNESS_INSTALL_TIMEOUT, "pnpm install")?;
+    let status = wait_child_with_timeout(&mut child, PNPM_HARNESS_INSTALL_TIMEOUT, "pnpm install")?;
     let stdout = stdout_handle.join().unwrap_or_default();
     let stderr = stderr_handle.join().unwrap_or_default();
 
@@ -1035,12 +1167,12 @@ fn pnpm_install_harness(
         ));
     }
 
+    cleanup_offline_pnpm_store(harness_root);
+
     Ok(())
 }
 
-fn spawn_pipe_reader<T: Read + Send + 'static>(
-    pipe: Option<T>,
-) -> std::thread::JoinHandle<String> {
+fn spawn_pipe_reader<T: Read + Send + 'static>(pipe: Option<T>) -> std::thread::JoinHandle<String> {
     std::thread::spawn(move || {
         let mut buffer = String::new();
         if let Some(mut pipe) = pipe {
@@ -1053,9 +1185,9 @@ fn spawn_pipe_reader<T: Read + Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::{
-        find_existing_harness, gc_harness_versions, harness_root_for_bundle,
-        harness_tree_bootable, manifest_ready, node_archive_spec_for, node_matches_manifest,
-        safe_archive_relative_path, HARNESS_TREES_KEPT,
+        find_existing_harness, gc_harness_versions, harness_root_for_bundle, harness_tree_bootable,
+        manifest_ready, node_archive_spec_for, node_matches_manifest, safe_archive_relative_path,
+        HARNESS_TREES_KEPT,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -1258,12 +1390,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(manifest_ready(
-            &manifest_path,
-            &bundled,
-            &harness,
-            &cli,
-        ));
+        assert!(manifest_ready(&manifest_path, &bundled, &harness, &cli,));
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1299,12 +1426,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!manifest_ready(
-            &manifest_path,
-            &bundled,
-            &harness,
-            &cli,
-        ));
+        assert!(!manifest_ready(&manifest_path, &bundled, &harness, &cli,));
         let _ = fs::remove_dir_all(&dir);
     }
 }

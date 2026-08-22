@@ -5,7 +5,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::AppHandle;
 
 use crate::chrome;
-use crate::desktop_settings::{AgentEnvironment, CloseAction};
+use crate::desktop_settings::CloseAction;
 use crate::i18n::{self, Msg};
 use crate::notify;
 use crate::runtime::boot_log;
@@ -40,16 +40,6 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         None::<&str>,
     )
     .map_err(|e| e.to_string())?;
-    let env_windows = MenuItem::with_id(
-        app,
-        "env-windows",
-        i18n::t(Msg::TrayEnvWindows),
-        true,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
-    let env_wsl = MenuItem::with_id(app, "env-wsl", i18n::t(Msg::TrayEnvWsl), true, None::<&str>)
-        .map_err(|e| e.to_string())?;
     let update = MenuItem::with_id(app, "update", i18n::t(Msg::TrayUpdate), true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let restart = MenuItem::with_id(
@@ -77,8 +67,6 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
             &close_min,
             &close_exit,
             &close_ask,
-            &env_windows,
-            &env_wsl,
             &install_catalog,
             &update,
             &restart,
@@ -95,7 +83,7 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
     TrayIconBuilder::new()
         .icon(icon)
         .menu(&menu)
-        .tooltip("DeepSeek Harness")
+        .tooltip("XiaoHui Harness")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => chrome::show_main(app),
             "close-minimize" => {
@@ -107,18 +95,12 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
             "close-ask" => {
                 let _ = chrome::remember_close_action(app, None);
             }
-            "env-windows" => {
-                chrome::remember_agent_environment(app, AgentEnvironment::Windows);
-            }
-            "env-wsl" => {
-                chrome::remember_agent_environment(app, AgentEnvironment::Wsl);
-            }
             "install-catalog" => plugin_catalog::begin_from_tray(app),
             "update" => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
                     match updater::check_now(&app).await {
-                        Ok(message) => notify::toast(&app, "DeepSeek Harness", &message),
+                        Ok(message) => notify::toast(&app, "XiaoHui Harness", &message),
                         Err(error) => {
                             boot_log::error(&format!("tray update failed: {error}"));
                             notify::toast(&app, i18n::t(Msg::TrayUpdateFailed), &error);

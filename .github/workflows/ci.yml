@@ -39,13 +39,15 @@ jobs:
   node-24:
     if: github.event_name == 'pull_request'
     runs-on: >-
-      ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
-          && github.event.pull_request.user.login != 'dependabot[bot]'
-          && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+      ${{ github.repository != 'deepseek-harness/deepseek-harness'
+          && 'ubuntu-latest'
+          || (vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
+              && github.event.pull_request.user.login != 'dependabot[bot]'
+              && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
+              || 'dsh-ubuntu-24-04-16core') }}
     name: node 24 / static
     env:
-      DSH_GATE_CONCURRENCY: '8'
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '2' }}
     steps:
       # Fetch complete history so the archive gate can read the trusted PR base from a reused shallow checkout.
       - uses: actions/checkout@v6
@@ -91,17 +93,20 @@ jobs:
   node-24-coverage:
     if: github.event_name == 'pull_request'
     runs-on: >-
-      ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
-          && github.event.pull_request.user.login != 'dependabot[bot]'
-          && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+      ${{ github.repository != 'deepseek-harness/deepseek-harness'
+          && 'ubuntu-latest'
+          || (vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
+              && github.event.pull_request.user.login != 'dependabot[bot]'
+              && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
+              || 'dsh-ubuntu-24-04-16core') }}
     name: node 24 / coverage
     env:
-      # Partitioning replaces the instrumented share; this budget gives the
-      # exempt-heavy gate two workers on both hosted and failover runners.
-      DSH_COVERAGE_MAX_WORKERS: '6'
-      DSH_COVERAGE_PARTITIONS: '4'
-      DSH_GATE_CONCURRENCY: '3'
+      # Product forks use standard four-core hosted runners. Keep one
+      # instrumented Vitest process there: multiple coverage processes can
+      # starve the real-shell fixtures even when each process has one worker.
+      DSH_COVERAGE_MAX_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '2' }}
+      DSH_COVERAGE_PARTITIONS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '4' || '' }}
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '3' || '1' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -153,19 +158,31 @@ jobs:
   node-24-consumers:
     if: github.event_name == 'pull_request'
     runs-on: >-
-      ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
-          && github.event.pull_request.user.login != 'dependabot[bot]'
-          && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+      ${{ github.repository != 'deepseek-harness/deepseek-harness'
+          && 'ubuntu-latest'
+          || (vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
+              && github.event.pull_request.user.login != 'dependabot[bot]'
+              && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
+              || 'dsh-ubuntu-24-04-16core') }}
     name: node 24 / snapshots and artifacts
     env:
-      DSH_GATE_CONCURRENCY: '8'
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '1' }}
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
-      DSH_OXLINT_THREADS: '8'
-      DSH_PUBLINT_CONCURRENCY: '8'
-      DSH_WEB_SNAPSHOT_WORKERS: '6'
-      # Failover halves snapshot concurrency for the shared 64-core VM.
-      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}
+      DSH_OXLINT_THREADS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '2' }}
+      DSH_PUBLINT_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '2' }}
+      # Empty selects the existing fully serial test:web:built path. Explicit
+      # worker counts intentionally start at two.
+      DSH_WEB_SNAPSHOT_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '' }}
+      # Product forks serialize snapshot workers: several scenarios own real
+      # shells or browser timing and are not stable when a four-core hosted
+      # runner is simultaneously building and replaying another scenario.
+      DSH_SNAPSHOT_MAX_CONCURRENCY: >-
+        ${{ github.repository != 'deepseek-harness/deepseek-harness'
+            && '1'
+            || (vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
+                && github.event.pull_request.user.login != 'dependabot[bot]'
+                && '12'
+                || '32') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -409,20 +426,22 @@ jobs:
   windows-native:
     if: github.event_name == 'pull_request'
     runs-on: >-
-      ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
-          && github.event.pull_request.user.login != 'dependabot[bot]'
-          && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+      ${{ github.repository != 'deepseek-harness/deepseek-harness'
+          && 'windows-latest'
+          || (vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
+              && github.event.pull_request.user.login != 'dependabot[bot]'
+              && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
+              || 'dsh-windows-2025-16core') }}
     name: windows node 24 / native complete
     timeout-minutes: 120
     env:
-      DSH_COVERAGE_MAX_WORKERS: '6'
-      DSH_COVERAGE_PARTITIONS: '8'
+      DSH_COVERAGE_MAX_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '2' }}
+      DSH_COVERAGE_PARTITIONS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '2' }}
       # Instrumented process and polling fixtures can exceed Vitest's defaults
       # under the complete lane's concurrent gate load.
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000'
-      DSH_GATE_CONCURRENCY: '4'
-      DSH_PUBLINT_CONCURRENCY: '8'
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '4' || '1' }}
+      DSH_PUBLINT_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '2' }}
     steps:
       - uses: actions/checkout@v6
         with:

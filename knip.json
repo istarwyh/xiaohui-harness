@@ -37,6 +37,17 @@
         "scripts/**/*.cjs"
       ]
     },
+    "apps/desktop-tauri": {
+      "entry": [
+        "desktop-i18n.js",
+        "overlay/**/*.mjs",
+        "scripts/**/*.mjs"
+      ],
+      "project": [
+        "overlay/**/*.mjs",
+        "scripts/**/*.mjs"
+      ]
+    },
     "examples": {
       "entry": [
         "headless-agent/tests/fixtures/cli-mock-llm.ts",

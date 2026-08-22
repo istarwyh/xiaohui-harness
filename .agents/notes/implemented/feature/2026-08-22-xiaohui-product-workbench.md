@@ -1,0 +1,45 @@
+# Agent Note: XiaoHui product workbench distribution
+
+Status: implemented
+
+English | [中文](2026-08-22-xiaohui-product-workbench.zh.md)
+
+## Problem
+
+Installing a domain plugin after installing a generic Harness desktop still asks the user to understand profiles, package registries, Python environments, Skills, and adapter paths. The Harbor integration also spans a Cordis bundle and a Python runtime, so distributing only its npm package leaves a partially configured product. Reusing `~/.dsh` lowers migration cost for the generic desktop but lets a branded workbench modify another Harness installation's profiles and sessions.
+
+## Decision
+
+XiaoHui Harness is a product fork of the Sakana Tauri distribution with the upstream Git history retained. The reusable desktop supervision, first-run Harness provisioning, notification overlay, and updater remain in `apps/desktop-tauri`; product assembly stays in that subtree and does not change the Agent Loop or Service packages.
+
+The committed `apps/desktop-tauri/product/harbor-evolution` snapshot contains `dsh-harbor-evolution@0.6.0` and its `evolve-agent-with-harbor` Skill. The sibling `product/harbor-python` snapshot contains the matching Python adapter source. `product/dsh-codex-auth` contains the reviewed `dsh-codex-auth@0.3.0` npm artifact, while `product/dsh-better-sidebar` contains `dsh-better-sidebar@0.15.1`. Both community snapshots preserve their upstream license and record the exact registry tarball and integrity value in `XIAOHUI_UPSTREAM.json`. They also record metadata-only patches that pin DSH peer ranges to XiaoHui's bundled `0.1.1-rc.1` runtime, including before-and-after tree hashes; executable plugin code remains byte-for-byte identical to the published artifacts.
+
+`bundle-harness-source.mjs` copies all three Cordis packages into the trimmed workspace and adds them to the bundled CLI dependency closure. The desktop overlay inserts Codex Auth, Search, Image, Better Sidebar, and Harbor Evolution rows after the Web profile and selects the Codex search provider. First launch therefore resolves committed plugin code rather than installing changing `latest` packages. A committed product lockfile fixes the remaining production graph; the release build fetches it into a checksum-bound compressed Store, and the product-managed pnpm reconstructs `node_modules` with frozen, offline semantics.
+
+`prepare-xiaohui-runtime.mjs` builds a macOS arm64 resource with portable CPython 3.12, the committed `harbor-dsh-evolution==0.6.0` source, and Harbor. The generated virtual environment uses only relative interpreter links, runs directly from application resources, and is invalidated by a source-tree digest. The script accepts `XIAOHUI_HARBOR_PYTHON_SOURCE` as a temporary override. `sync-product-plugin.mjs` refreshes both committed snapshots from a local Harbor checkout through explicit allowlists.
+
+The native Host always uses `XiaoHui Harness/dsh-home` under platform application data and creates `XiaoHui Harness/workspace/jobs`; it does not adopt or import `DSH_HOME` or `~/.dsh`. This product override supersedes home adoption in [desktop host environment and home adoption](2026-08-14-desktop-host-env-and-home-adoption.md) for XiaoHui's native launch while retaining native host Node discovery and replacing global pnpm reuse with a product-managed copy. The product overlay extends [desktop shell overlay plugins](../architecture/2026-08-14-desktop-shell-overlay-plugins.md) with the required product rows; a missing Harbor runtime is a boot failure, while notification delivery remains optional. Codex Auth reads the official Codex CLI's Host-side login state and never moves tokens into browser settings. Better Sidebar's reviewed `node-pty` build is covered by the existing workspace `allowBuilds` policy.
+
+The native provisioner reuses Node only when its version and `process.platform:process.arch` match the product target. It never adopts a global pnpm; it provisions the pinned product copy so wrappers and native packages installed by another Node architecture cannot enter the first-launch dependency graph. macOS arm64 Node and pnpm archives are fixed by digest in source. The Store archive digest is recorded in the generated bundle manifest, verified before extraction, and removed from the writable Harness tree together with the expanded Store after a successful install. The 35,000-file Store is compressed into one resource so Tauri does not package a large mutable-looking tree or follow platform-specific links.
+
+Private `dsh`, Node, and pnpm shims are prepended only to the Host process tree. The product does not persist a global `dsh` command or edit a shell profile by default; `XIAOHUI_PERSIST_DSH_CLI=1` is an explicit developer-only opt-in.
+
+The desktop overlay also contributes a workbench Content Security Policy and a no-referrer policy through `webserver/index-inject`; the Tauri-owned splash and shell have their own CSP. Cordis client execution requires `unsafe-eval`, but object embedding and base-URL mutation are disabled.
+
+The release target is `aarch64-apple-darwin` only. An `xiaohui-v*` tag builds and signs the App/updater, bundles the DMG independently, then restores and re-signs the App/updater before publishing the arm64 asset set. This product-specific release set supersedes the platform matrix in [cross-platform desktop source provisioning](2026-08-14-cross-platform-desktop-source-provisioning.md); the underlying provisioning code remains available for future targets. Apple code signing and notarization remain separate credentials from the XiaoHui-specific Tauri updater signature.
+
+## Alternatives considered
+
+**Distribute only the plugin.** Rejected because users would still install and reconcile the npm bundle, Skill, Python Adapter, interpreter, and paths, which is the product burden this distribution removes.
+
+**Build a new desktop shell.** Rejected because the Sakana shell already owns first-run provisioning, process-tree teardown, startup recovery, tray behavior, notifications, and signed updates. Reimplementation would create a second lifecycle system without adding product value.
+
+**Download components or production dependencies on first launch.** Rejected because it makes product availability depend on npm, PyPI, a Node mirror, `uv`, and interpreter installation after the user has already downloaded the application. XiaoHui carries both domain capability and the remaining production dependency graph as fixed installer resources.
+
+**Adopt the user's existing Harness home.** Rejected because a product application must not silently add its bundle or configuration to a separately managed Harness environment. Users can export data explicitly when a migration workflow exists.
+
+**Keep the full upstream platform matrix.** Rejected for the first product release because the Harbor runtime resource is platform-specific and the requested delivery target is macOS arm64. Additional targets require their own portable runtime and acceptance path.
+
+## Consequences
+
+Installing one DMG yields a named AI workbench whose Harbor plugin, Skill, and Python commands are already aligned at version `0.6.0`, with Codex Auth `0.3.0` and Better Sidebar `0.15.1` already mounted. Developers refresh product snapshots explicitly and can reproduce a release from committed plugin code, a frozen lockfile, and digest-checked build inputs. Acceptance on macOS arm64 verifies bundled Node 22.19.0 and pnpm 11.7.0 under deliberately unreachable mirrors, a frozen offline install, HTTP 200 startup, the XiaoHui title, all three client bundles in the Web boot manifest, every product Host row, Harbor 0.21.0, and Python plugin discovery. The installer is larger because it carries CPython, Harbor, Codex Auth, Better Sidebar, and the compressed Node dependency graph; Harbor Jobs still require Docker, Codex Auth remains an unofficial local single-user integration, and an ad-hoc-signed, unnotarized DMG requires manual Gatekeeper approval until Apple release credentials are configured.

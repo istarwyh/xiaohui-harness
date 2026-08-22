@@ -67,13 +67,35 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await dialog.getByRole('button', { name: 'New folder' }).click()
     await page.getByLabel('Folder name').fill(name)
     await page.getByRole('button', { name: 'Create', exact: true }).click()
-    // Creating selects the new folder in the listing; Open adopts it.
+    // Creating closes the nested dialog, relists the parent, then selects and
+    // scans the new folder. Wait for that whole async sequence: on a loaded
+    // hosted runner, Open becoming actionable alone did not prove that the
+    // created directory existed and was the committed selection.
+    await page.getByLabel('Folder name').waitFor({ state: 'hidden', timeout: 30_000 })
+    const createdPath = join(parent, name)
+    const createdRow = dialog.locator('button[aria-current="true"]').filter({ hasText: name })
+    // The selected row is published only after createDirectory has resolved
+    // and the parent listing has returned. Wait for that end-to-end signal
+    // before asking this heavily concurrent Vitest process to stat the path.
+    await expect.poll(() => createdRow.count(), { timeout: 30_000 }).toBe(1)
+    await expect.poll(() => createdRow.getAttribute('aria-current'), { timeout: 30_000 }).toBe('true')
+    await expect.poll(async () => {
+      try {
+        return (await stat(createdPath)).isDirectory()
+      } catch {
+        return false
+      }
+    }, { timeout: 30_000 }).toBe(true)
+    // The selected folder is now the exact target Open adopts.
     await dialog.getByRole('button', { name: 'Open', exact: true }).click()
     await dialog.waitFor({ state: 'hidden', timeout: 10_000 })
-    await expect.poll(
-      () => scaffold.ctx.workspaceRegistry.resolveByPath(join(parent, name)),
-      { timeout: 10_000 },
-    ).not.toBeUndefined()
+    await expect.poll(async () => {
+      try {
+        return await scaffold.ctx.workspaceRegistry.resolveByPath(createdPath) !== undefined
+      } catch {
+        return false
+      }
+    }, { timeout: 10_000 }).toBe(true)
   }
 
   /**
@@ -147,7 +169,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     const titles = scaffold.ctx.workspaceRegistry.list().map(workspace => workspace.title)
     expect(titles.slice(0, 2)).toEqual(['beta-ws', 'alpha-ws'])
     expect(tripwire.pageErrors).toEqual([])
-  }, 90_000)
+  }, 150_000)
 
   it('renames a workspace over the wire with a duplicate-name pre-check', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-rename'))

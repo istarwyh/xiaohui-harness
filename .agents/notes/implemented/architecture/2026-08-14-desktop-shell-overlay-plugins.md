@@ -14,6 +14,8 @@ The desktop fork must add window chrome, a tray, signed updates, and task-comple
 
 **Host collaboration is an overlay plugin, not a package edit.** The shell copies `overlay/desktop-notify/index.mjs` into `$DSH_HOME/desktop-overlay`, writes a `--patch` list whose plugin `name` is a `file://` URL, and starts `dsh web --patch <that file>`. A Windows drive path such as `C:/...` is not a valid ESM specifier — Node reads `C:` as a URL scheme — so the overlay must emit `file:///C:/...` (spaces percent-encoded). The plugin listens for `session/event` `turn/end` with `reason.kind === 'completed'` and POSTs to a loopback notify URL supplied as `DSH_DESKTOP_NOTIFY_URL`. The Rust listener shows a system toast and plays `sounds/complete.wav` only when the main window is unfocused.
 
+[XiaoHui product workbench distribution](../feature/2026-08-22-xiaohui-product-workbench.md) adds its required Harbor plugin row and executable paths to the same native overlay patch without moving product behavior into Harness packages.
+
 **Updates remain the signed Tauri updater.** The signed check runs after the main window opens so a failed or slow network does not hold the splash. The tray "检查更新" item runs the same signed check on demand.
 
 This extends [cross-platform desktop source provisioning](../feature/2026-08-14-cross-platform-desktop-source-provisioning.md) without moving desktop behavior into `packages/`.

@@ -26,6 +26,9 @@ import css from './SidebarRoot.module.css'
 /** Wide-content unmount delay; matches the 150ms wide-content fade-out. */
 const COLLAPSE_SETTLE_MS = 150
 
+/** Build-selected product name; local framework builds retain the generic fallback. */
+const PRODUCT_NAME = process.env.DSH_CLIENT_TITLE ?? 'DSH Local Build'
+
 /**
  * How long the column's scrollbars stay drawn after the pointer leaves it.
  * The bar is a pointer affordance here, and hiding it on the leave event
@@ -143,7 +146,7 @@ export function SidebarRoot({
                 {renderSlot('sidebar.brand.name', {}, {
                   fallback: (
                     <>
-                      <span className={css.fallbackBrandName}>DSH Local Build</span>
+                      <span className={css.fallbackBrandName}>{PRODUCT_NAME}</span>
                       {process.env.DSH_CLIENT_COMMIT_HASH
                         ? <span className={css.buildRevision}>{process.env.DSH_CLIENT_COMMIT_HASH}</span>
                         : null}

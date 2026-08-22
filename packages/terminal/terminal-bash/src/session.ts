@@ -23,6 +23,9 @@ import type {
 import type { ResolvedConfig } from './config.ts'
 import { CONTROLLED_PROMPT, TerminalSanitizer } from './sanitize.ts'
 
+const CURSOR_POSITION_QUERY = '\x1b[6n'
+const CURSOR_POSITION_RESPONSE = '\x1b[1;1R'
+
 function utf8Tail(text: string, maxBytes: number): { text: string; truncated: boolean } {
   if (Buffer.byteLength(text) <= maxBytes) return { text, truncated: false }
   const chars = Array.from(text)
@@ -79,6 +82,8 @@ class LocalSendOperation implements TerminalSendOperation {
   private readonly promise: PromiseWithResolvers<TerminalSendResult>
   private finished = false
   private cancellationRequested = false
+  private outputObserved = false
+  private silenceNeedsOutput = false
   private initialForegroundLeftWait: boolean
   private initialForegroundPgid: number | undefined
 
@@ -104,8 +109,24 @@ class LocalSendOperation implements TerminalSendOperation {
     return this.cancellationRequested
   }
 
+  get hasOutput(): boolean {
+    return this.outputObserved
+  }
+
+  get silenceEligible(): boolean {
+    return !this.silenceNeedsOutput || this.outputObserved
+  }
+
   append(text: string): void {
-    if (!this.finished) this.output.append(text)
+    if (!this.finished && text.length > 0) {
+      this.outputObserved = true
+      this.output.append(text)
+    }
+  }
+
+  beginWrite(): void {
+    this.silenceNeedsOutput = true
+    this.outputObserved = false
   }
 
   settle(waitReason: TerminalWaitReason, sessionStatus: TerminalSessionStatus, inheritedTruncation: boolean): void {
@@ -184,6 +205,7 @@ export class LocalPtySession implements TerminalBackendSession {
   private closing = false
   private closePromise: Promise<void> | undefined
   private transportFailure: Error | undefined
+  private cursorQueryMatched = 0
 
   constructor(
     private readonly terminal: SubprocessTerminalHandle,
@@ -279,6 +301,10 @@ export class LocalPtySession implements TerminalBackendSession {
       const input = `${request.text}${request.submit ? '\r' : ''}`
       if (input.length > 0 && !operation.cancelRequested) {
         this.resetReadinessEvidence()
+        // Output collected while the asynchronous pre-write inspection was
+        // pending belongs to the previous shell turn. Keep it renderable, but
+        // do not let that stale output satisfy this send's silence fallback.
+        operation.beginWrite()
         const write = this.terminal.write(input)
         this.activeWrite = write.then(() => true, () => false)
         try {
@@ -363,7 +389,24 @@ export class LocalPtySession implements TerminalBackendSession {
 
   private readonly onTerminalData = (chunk: Buffer | Uint8Array | string): void => {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk
-    this.onData(this.decoder.decode(bytes, { stream: true }))
+    const decoded = this.decoder.decode(bytes, { stream: true })
+    this.respondToTerminalQueries(decoded)
+    this.onData(decoded)
+  }
+
+  private respondToTerminalQueries(data: string): void {
+    for (const char of data) {
+      if (char === CURSOR_POSITION_QUERY[this.cursorQueryMatched]) {
+        this.cursorQueryMatched += 1
+      } else {
+        this.cursorQueryMatched = char === CURSOR_POSITION_QUERY[0] ? 1 : 0
+      }
+      if (this.cursorQueryMatched !== CURSOR_POSITION_QUERY.length) continue
+      this.cursorQueryMatched = 0
+      void this.terminal.write(CURSOR_POSITION_RESPONSE).catch((error: unknown) => {
+        this.onTransportFailure(error)
+      })
+    }
   }
 
   private readonly onTerminalEnd = (): void => {
@@ -449,8 +492,10 @@ export class LocalPtySession implements TerminalBackendSession {
         return
       }
       const elapsed = Date.now() - operation.startedAt
-      const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
-      const acceptsStdinWait = startupHasOutput && foreground !== undefined
+      const hasSendOutput = operation.hasOutput
+      const exactHasOutput = !this.initializing || hasSendOutput
+      const silenceEligible = this.initializing ? hasSendOutput : operation.silenceEligible
+      const acceptsStdinWait = exactHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
       if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
         this.settleActive('stdin_read')
@@ -461,7 +506,7 @@ export class LocalPtySession implements TerminalBackendSession {
       // on waiting for shell ownership instead of letting a child marker suppress
       // readiness until the absolute timeout.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
-      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
+      if (silenceEligible && idleFor >= this.config.idleSilenceMs + handoffGrace) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {

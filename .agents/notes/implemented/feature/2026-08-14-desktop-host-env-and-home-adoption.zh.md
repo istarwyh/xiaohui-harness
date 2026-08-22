@@ -14,6 +14,8 @@ Status: implemented
 
 **Host 匹配已有 Harness 主目录，而不是始终使用 `dsh-home/`。** 选择顺序为：已包含 Harness 数据的 `$DSH_HOME`，然后是 `~/.dsh`，最后才是隔离的应用数据主目录。目录中存在 `sessions`、`.credentials.yaml`、`.env`、`profiles` 或 `settings.yaml` / `.yml` / `.json` 时，即视为 Harness 主目录。其他已发现主目录中缺失的会话、凭据、设置和普通文件会复制进选定主目录；已有文件保持不动。`desktop-overlay` 和 `node_modules` 从不导入——overlay 由外壳重新生成。匹配时删除每个已发现主目录里的 `profiles/node_modules`；`profiles/*/node_modules` 只在安装已损坏时删除：profile 的 `package.json` 声明的依赖无法在其 `node_modules` 下解析到包目录（manifest 缺失或 junction 悬空，因为解析会跟随重解析点），或 profile 有 `node_modules` 却没有可读的 manifest。删除时只解除重解析点，不跟着进 npm-cache 或 harness 树；完好的安装保留，Host 日常重启不会迫使各 profile 重新走一遍 `dsh plugin install`。重解析点与单文件复制失败只记日志并跳过，不中止启动。主目录匹配、释放源码、PATH 桥写入或 overlay 复制遇到拒绝访问、路径不存在、文件占用（`os error 5` / `3` / `32`）时，日志带上路径并降级：改用隔离主目录、已有 `harness-versions`、当前进程 PATH，或无 overlay 启动 Host。Host 启动之前，声明依赖无法解析的每个 profile 会在其目录里运行 `node …/pnpm.cjs install`（找不到该入口时则在桥接后的 PATH 上运行 `dsh plugin --profile <name> install`；上限 10 分钟，不弹出控制台窗口，失败带输出尾部，pnpm 报成功后复检）；只有 `web` profile 修复失败才中止启动，其余 profile 留待之后的 `dsh plugin`。notify 端点同样可降级：绑定失败时跳过 overlay，而不是中止启动。Host 死于指名某个加载条目（`failed to apply loader entry <id>`）时，会带着禁用该插件的本次会话救援 `--patch` 覆盖层重启（每次启动最多禁用四个插件），单个损坏的社区插件不会让桌面端无法打开；禁用不持久化，插件修复或更新后重启即恢复加载，被跳过的插件 id 通过系统通知和 boot.log 呈现。
 
+[XiaoHui 产品化 AI 工作台发行](2026-08-22-xiaohui-product-workbench.zh.md)始终选择产品自己的隔离主目录，把宿主 Node 复用限制为原生架构，以产品自有 pnpm 取代全局 pnpm 复用，同时保留 Profile 修复。
+
 ## 曾考虑的替代方案
 
 **继续使用隔离的 `dsh-home/`，把 CLI 数据复制进去。** 不采用：之后的 CLI 或 `dsh web` 启动看不到桌面端会话，密钥也会在两个主目录之间分叉。

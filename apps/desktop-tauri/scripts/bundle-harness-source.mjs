@@ -1,8 +1,9 @@
 /**
  * Bundle a trimmed harness monorepo slice for the Tauri installer.
  *
- * Ships source + pre-built lib/dist artifacts, never node_modules.
- * First-run provisioning runs `pnpm install --prod` against this tree.
+ * Ships source + pre-built lib/dist artifacts, never node_modules. The
+ * committed product lockfile is verified before an offline pnpm store is
+ * attached by prepare-harness-offline-store.mjs.
  */
 import { createHash } from 'node:crypto'
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -13,6 +14,24 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = join(desktopRoot, '..', '..')
 const outRoot = join(desktopRoot, 'bundled', 'harness')
+const productLockPath = join(desktopRoot, 'product', 'harness-pnpm-lock.yaml')
+const productPlugins = [
+  {
+    name: 'dsh-harbor-evolution',
+    root: join(desktopRoot, 'product', 'harbor-evolution'),
+    destination: join('packages', 'product', 'harbor-evolution'),
+  },
+  {
+    name: 'dsh-codex-auth',
+    root: join(desktopRoot, 'product', 'dsh-codex-auth'),
+    destination: join('packages', 'product', 'dsh-codex-auth'),
+  },
+  {
+    name: 'dsh-better-sidebar',
+    root: join(desktopRoot, 'product', 'dsh-better-sidebar'),
+    destination: join('packages', 'product', 'dsh-better-sidebar'),
+  },
+]
 
 const skipDirNames = new Set([
   'node_modules', '.git', '.turbo', 'coverage', 'release', '.stage', '.cache',
@@ -97,10 +116,10 @@ function hashSourceWalk(sourceRoot, current, hasher, relPrefix) {
 }
 
 /** Hash the same source slices we copy into the installer bundle. */
-function hashBundledContent(trimmedWorkspace, bundlePkg) {
+function hashBundledContent(trimmedWorkspace, bundlePkg, productLock) {
   const hasher = createHash('sha256')
 
-  for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
+  for (const name of ['package.json', 'pnpm-workspace.yaml']) {
     const path = join(repoRoot, name)
     if (!existsSync(path)) continue
     hasher.update(name)
@@ -111,6 +130,8 @@ function hashBundledContent(trimmedWorkspace, bundlePkg) {
       hasher.update(readFileSync(path))
     }
   }
+  hasher.update('pnpm-lock.yaml')
+  hasher.update(productLock)
 
   for (const rel of ['patches', 'vendor', join('native', 'landlock-run'), join('apps', 'cli'), join('apps', 'web')]) {
     const path = join(repoRoot, rel)
@@ -130,8 +151,144 @@ function hashBundledContent(trimmedWorkspace, bundlePkg) {
     }
   }
 
+  for (const plugin of productPlugins) {
+    hashSourceWalk(plugin.root, plugin.root, hasher, plugin.destination)
+    hasher.update(plugin.name)
+    hasher.update('workspace:*')
+  }
+
   hasher.update(trimmedWorkspace)
   return hasher.digest('hex')
+}
+
+/** Hash an extracted npm artifact without its XiaoHui provenance sidecar. */
+export function hashPublishedSnapshot(root) {
+  const hasher = createHash('sha256')
+
+  /** @param {string} current @param {string} prefix */
+  const walk = (current, prefix) => {
+    const entries = readdirSync(current, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))
+    for (const entry of entries) {
+      if (prefix === '' && entry.name === 'XIAOHUI_UPSTREAM.json') continue
+      const path = join(current, entry.name)
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isSymbolicLink()) {
+        throw new Error(`published plugin snapshot must not contain symlinks: ${rel}`)
+      }
+      if (entry.isDirectory()) {
+        walk(path, rel)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const mode = statSync(path).mode & 0o777
+      hasher.update(`${rel}\0${mode.toString(8)}\0`)
+      hasher.update(readFileSync(path))
+      hasher.update('\0')
+    }
+  }
+
+  walk(root, '')
+  return hasher.digest('hex')
+}
+
+/** Verify the committed package still matches its reviewed published snapshot. */
+function verifyPublishedSnapshot(root, manifest) {
+  const provenancePath = join(root, 'XIAOHUI_UPSTREAM.json')
+  if (!existsSync(provenancePath)) return
+  const provenance = JSON.parse(readFileSync(provenancePath, 'utf8'))
+  if (provenance.package !== manifest.name || provenance.version !== manifest.version) {
+    throw new Error(
+      `XiaoHui product provenance mismatch for ${manifest.name}@${manifest.version}`,
+    )
+  }
+  if (!/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(provenance.integrity ?? '')) {
+    throw new Error(`XiaoHui product integrity is invalid: ${manifest.name}`)
+  }
+  const actual = hashPublishedSnapshot(root)
+  if (actual !== provenance.treeSha256) {
+    throw new Error(
+      `XiaoHui product snapshot hash mismatch for ${manifest.name}: expected ${provenance.treeSha256}, found ${actual}`,
+    )
+  }
+}
+
+/** Names available from the copied monorepo rather than the external registry. */
+function bundledWorkspacePackageNames(bundleRoot) {
+  const manifests = [
+    join(bundleRoot, 'apps', 'cli', 'package.json'),
+    join(bundleRoot, 'apps', 'web', 'package.json'),
+    join(bundleRoot, 'native', 'landlock-run', 'package.json'),
+  ]
+
+  for (const parent of [
+    join(bundleRoot, 'vendor'),
+    join(bundleRoot, 'native', 'landlock-run', 'packages'),
+  ]) {
+    if (!existsSync(parent)) continue
+    for (const entry of readdirSync(parent, { withFileTypes: true })) {
+      if (entry.isDirectory()) manifests.push(join(parent, entry.name, 'package.json'))
+    }
+  }
+
+  const packagesRoot = join(bundleRoot, 'packages')
+  if (existsSync(packagesRoot)) {
+    for (const group of readdirSync(packagesRoot, { withFileTypes: true })) {
+      if (!group.isDirectory()) continue
+      const groupRoot = join(packagesRoot, group.name)
+      for (const entry of readdirSync(groupRoot, { withFileTypes: true })) {
+        if (entry.isDirectory()) manifests.push(join(groupRoot, entry.name, 'package.json'))
+      }
+    }
+  }
+
+  const names = new Set()
+  for (const manifestPath of manifests) {
+    if (!existsSync(manifestPath)) continue
+    const name = JSON.parse(readFileSync(manifestPath, 'utf8')).name
+    if (typeof name === 'string' && name !== '') names.add(name)
+  }
+  return names
+}
+
+/** Install XiaoHui's product plugins into the trimmed workspace closure. */
+export function installProductPlugins(bundleRoot) {
+  const cliManifestPath = join(bundleRoot, 'apps', 'cli', 'package.json')
+  const cliManifest = JSON.parse(readFileSync(cliManifestPath, 'utf8'))
+  const manifests = []
+
+  for (const plugin of productPlugins) {
+    const productManifest = join(plugin.root, 'package.json')
+    if (!existsSync(productManifest)) {
+      throw new Error(`XiaoHui product plugin missing: ${productManifest}`)
+    }
+    const manifest = JSON.parse(readFileSync(productManifest, 'utf8'))
+    if (manifest.name !== plugin.name) {
+      throw new Error(
+        `XiaoHui product plugin name mismatch: expected ${plugin.name}, found ${manifest.name ?? '<missing>'}`,
+      )
+    }
+    if (manifest.dsh?.bundle?.patch !== './cordis.patch.yml') {
+      throw new Error(`XiaoHui product plugin has no DSH bundle patch: ${plugin.name}`)
+    }
+    verifyPublishedSnapshot(plugin.root, manifest)
+
+    copyTree(plugin.root, join(bundleRoot, plugin.destination))
+    manifests.push(manifest)
+    cliManifest.dependencies = {
+      ...cliManifest.dependencies,
+      [plugin.name]: 'workspace:*',
+    }
+  }
+
+  const workspaceNames = bundledWorkspacePackageNames(bundleRoot)
+  for (const manifest of manifests) {
+    for (const peerName of Object.keys(manifest.peerDependencies ?? {})) {
+      if (workspaceNames.has(peerName)) cliManifest.dependencies[peerName] = 'workspace:*'
+    }
+  }
+
+  writeFileSync(cliManifestPath, `${JSON.stringify(cliManifest, null, 2)}\n`)
 }
 
 /**
@@ -166,6 +323,19 @@ function assertBuiltArtifacts() {
     throw new Error(
       'landlock-run entry lib missing. From native/landlock-run run: pnpm run build:ts',
     )
+  }
+  const buildRecordPath = join(repoRoot, '.dsh-build', 'client-build-environment.json')
+  if (!existsSync(buildRecordPath)) {
+    throw new Error('Harness client build record missing. Run the XiaoHui-branded root build first.')
+  }
+  const buildRecord = JSON.parse(readFileSync(buildRecordPath, 'utf8'))
+  if (buildRecord.environment?.DSH_CLIENT_TITLE !== 'XiaoHui Harness') {
+    throw new Error(
+      'Harness client artifacts are not branded for XiaoHui. Run: DSH_CLIENT_TITLE="XiaoHui Harness" pnpm run build',
+    )
+  }
+  if (!existsSync(productLockPath)) {
+    throw new Error(`XiaoHui frozen Harness lockfile missing: ${productLockPath}`)
   }
 }
 
@@ -210,9 +380,10 @@ assertBuiltArtifacts()
 removeTree(outRoot)
 mkdirSync(outRoot, { recursive: true })
 
-for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
+for (const name of ['package.json', 'pnpm-workspace.yaml']) {
   copyTree(join(repoRoot, name), join(outRoot, name))
 }
+copyTree(productLockPath, join(outRoot, 'pnpm-lock.yaml'))
 
 if (existsSync(join(repoRoot, 'patches'))) {
   copyTree(join(repoRoot, 'patches'), join(outRoot, 'patches'))
@@ -233,6 +404,7 @@ for (const group of readdirSync(packagesRoot, { withFileTypes: true })) {
     copyTree(join(groupPath, pkg.name), join(outRoot, 'packages', group.name, pkg.name))
   }
 }
+installProductPlugins(outRoot)
 
 const trimmedWorkspace = buildTrimmedWorkspaceYaml(
   readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf8'),
@@ -240,6 +412,7 @@ const trimmedWorkspace = buildTrimmedWorkspaceYaml(
 writeFileSync(join(outRoot, 'pnpm-workspace.yaml'), trimmedWorkspace)
 
 const rootPkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'))
+const productLock = readFileSync(productLockPath)
 const bundlePkg = {
   name: '@deepseek-ai/dsh-desktop-bundle',
   private: true,
@@ -252,9 +425,14 @@ stripDevDependencies(outRoot)
 
 const manifest = {
   harnessVersion: rootPkg.version,
+  product: 'XiaoHui Harness',
+  productPlugins: productPlugins.map(plugin => {
+    const pkg = JSON.parse(readFileSync(join(plugin.root, 'package.json'), 'utf8'))
+    return `${plugin.name}@${pkg.version}`
+  }),
   bundledAt: new Date().toISOString(),
-  contentSha256: hashBundledContent(trimmedWorkspace, bundlePkg),
-  method: 'trimmed-monorepo-source',
+  contentSha256: hashBundledContent(trimmedWorkspace, bundlePkg, productLock),
+  method: 'trimmed-monorepo-source-frozen-lock',
 }
 writeFileSync(join(outRoot, '.bundle-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 

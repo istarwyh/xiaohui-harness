@@ -1,0 +1,54 @@
+[project]
+name = "harbor-dsh-evolution"
+version = "0.6.0"
+description = "Candidate identity, evaluation summaries, and promotion gates for DeepSeek Harness agents evaluated with Harbor."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "istarwyh" }]
+keywords = [
+  "agent-evaluation",
+  "agent-evolution",
+  "deepseek-harness",
+  "harbor",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+  "harbor>=0.21.0,<0.22",
+  "jsonschema>=4.23,<5",
+  "PyYAML>=6.0,<7",
+]
+
+[project.urls]
+Homepage = "https://github.com/istarwyh/harbor-self-evolving"
+Documentation = "https://github.com/istarwyh/harbor-self-evolving#readme"
+Issues = "https://github.com/istarwyh/harbor-self-evolving/issues"
+Repository = "https://github.com/istarwyh/harbor-self-evolving.git"
+
+[project.entry-points."harbor.plugins"]
+dsh-evolution = "harbor_dsh_evolution.plugin:EvolutionPlugin"
+
+[project.scripts]
+harbor-dsh = "harbor_dsh_evolution.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.4", "pytest-asyncio>=1.0"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/harbor_dsh_evolution"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,102 +1,44 @@
-# DeepSeek Harness Desktop (Tauri)
+# XiaoHui Harness Desktop
 
 English | [中文](README.zh.md)
 
-Rust/WebView2 shell over the existing `dsh web` UI. The installer ships **harness source** (no `node_modules`); first run scans the host for a compatible Node / pnpm and an existing `~/.dsh` home, downloads **build tools only** when the scan finds none, then runs `pnpm install --prod` against the bundled tree.
+This Tauri application embeds the existing `dsh web` client and adds the XiaoHui product assembly. The installer carries the trimmed Harness source, Harbor Evolution and its Skill, Codex Auth, Better Sidebar, portable CPython 3.12, and the Harbor adapter.
 
-Current desktop release: **0.1.1-rc.1-0.1**.
+## Runtime layout
 
-## Architecture
-
-| Layer | What ships | First run |
-|---|---|---|
-| **Installer** | Tauri binary + splash + trimmed monorepo slice (`bundled/harness/`) | — |
-| **Build env** | — | Reuse host Node 22.19+ or 24+ and pnpm when present; otherwise Node (npmmirror) and pnpm (via npm + npmmirror registry) |
-| **Dependencies** | — | `pnpm install --prod --no-frozen-lockfile` in the platform application-data directory (trimmed bundle vs lockfile; `CI` unset so pnpm does not force frozen install) |
-| **Host** | — | `node apps/cli/lib/bin.js web --host 127.0.0.1`; a loader plugin that fails at start is disabled and the Host is retried |
-| **UI** | Local `shell.html` title bar | Frameless window embeds `dsh web`; splash is a compact transparent window with a borderless radial frost, the official fish mark, DeepSeek wordmark, and a progress bar; the first close is an in-window light modal matching the web client; Windows controls on the right, macOS on the left, Linux from the window-manager button layout |
-| **Tray** | Native tray icon | First close asks minimize-to-tray vs quit and remembers the answer in `desktop-settings.json`; tray can change that later, show the window, install the Sakana plugin catalog (`dsh plugin --profile web add github:Sakana-yuyu/dsh-plugins` into the live Host home), check for updates, restart, or quit. Restart and Quit stop the Host Node process tree; Restart then relaunches the desktop process. A successful catalog install restarts the same way so the catalog loads. Minimize-to-tray leaves the Host running |
-| **Notify** | Overlay plugin + localhost POST | `turn/end` with `completed` shows a toast and plays `sounds/complete.wav` when the window is unfocused |
-| **Updates** | Embedded updater public key | Check the stable GitHub update manifest, verify the downloaded artifact signature, install, and restart |
-| **Agent environment** | Windows (default) or WSL | Tray sets `desktop-settings.json`; WSL starts Linux `dsh web` in the default WSL2 distro; restart required |
-
-Windows desktop ships one installer, one desktop binary, and one Web client (`dsh web` in the WebView); this is not a second SKU and not a second Web UI. The tray Agent environment toggle only chooses where the Host process runs: Windows Node with pwsh, or Linux Node with bash inside the default WSL2 distro. Switching is operational, not a second codebase: restart is required; Windows keeps the isolated desktop home while WSL uses the distro `~/.dsh`; sessions are not shared; credentials and `.env` are copied once into the Linux home when both files are missing there. A second installer or forked Web client would duplicate the updater, overlay, homes, and CI and is not shipped. In WSL mode, workspace browse uses Linux paths such as `/mnt/d/...` for a Windows drive; `packages/` is unchanged; if Docker Desktop is the default distro, set an eligible WSL2 distro with `wsl --set-default`.
-
-Bundled tree includes: `apps/cli` (with built `lib/`), `apps/web` (with `dist/`), `packages/*/*` (excluding examples and test-support), `native/landlock-run`, `vendor/*`, `patches/`, lockfile — **not** the old 900k-junction offline runtime. Workspace `devDependencies` are stripped at bundle time so `--prod` install does not require demo packages.
-
-### Mirrors (override via env)
-
-| Variable | Default |
+| Resource | Runtime behavior |
 |---|---|
-| `DSH_NODE_MIRROR` | `https://npmmirror.com/mirrors/node` |
-| `DSH_NPM_REGISTRY` | `https://registry.npmmirror.com` |
+| `harness-source` | Carries the built source, frozen lockfile, and one compressed offline pnpm store; copied to a content-hashed application-data directory |
+| `toolchain` | Checksum-pinned macOS arm64 Node 22.19.0 and pnpm 11.7.0 archives used when no compatible Host Node exists |
+| `xiaohui-runtime` | Executed from the signed application resources; supplies `harbor` and `harbor-dsh` |
+| `desktop-overlay` | Registers notifications, Codex Auth/Search/Image, Better Sidebar, and Harbor Evolution through `dsh web --patch` |
+| `XiaoHui Harness/dsh-home` | Isolated sessions, settings, credentials, and web profile |
+| `XiaoHui Harness/workspace` | Default project root and Harbor `jobs/` directory |
 
-### Dev vs production
+The product snapshots live in `product/harbor-evolution`, `product/harbor-python`, `product/dsh-codex-auth`, and `product/dsh-better-sidebar`. `scripts/bundle-harness-source.mjs` places the three Cordis packages and Harbor Skill in the trimmed workspace and adds them to the CLI dependency closure, so the Host resolves the plugin code without a registry install. The two community packages are pinned to their reviewed npm tarballs with source URLs and integrity hashes in `XIAOHUI_UPSTREAM.json`. Both record metadata-only patches that pin their `dsh-*` peers to XiaoHui's bundled `0.1.1-rc.1` runtime and prevent pnpm from resolving a second release-candidate graph. `scripts/prepare-xiaohui-runtime.mjs` installs the committed Python snapshot into a relocatable resource and accepts `XIAOHUI_HARBOR_PYTHON_SOURCE` for temporary local adapter testing.
 
-| Mode | Env | Behavior |
-|---|---|---|
-| **Local dev** | `DSH_DESKTOP_LAUNCH=local` | Use monorepo checkout + PATH `node`/`pnpm`; skip mirror fetch |
-| **Production** | (default) | Copy `harness-source` from installer → app data → mirror install → boot |
+Host Node reuse requires both the supported version and the native CPU architecture. Global pnpm installations are never adopted; XiaoHui provisions its own pinned pnpm to avoid wrappers and native packages installed by a Node build for another architecture. On a cold start, every archive digest is checked, the dependency store is expanded, and `pnpm install --prod --frozen-lockfile --offline` reconstructs `node_modules`; the temporary expanded store and copied archive are removed after success. The 35,000-file Store is compressed to one application resource to reduce the installed app and avoid platform-link failures during Tauri packaging. The macOS build runs App/updater, DMG, and App/updater bundling as separate stages so Finder DMG decoration cannot discard the signed updater artifacts.
 
-Writable paths live under the platform application-data directory (`%APPDATA%\DeepSeek Harness` on Windows, `~/Library/Application Support/ai.deepseek.dsh-desktop` on macOS, and the platform data directory returned by Tauri on Linux):
+The application prepends its private `dsh`, Node, and pnpm shims only to the Host process tree. It does not overwrite a user's global `dsh` command or shell profile unless a developer explicitly launches it with `XIAOHUI_PERSIST_DSH_CLI=1`.
 
-- `harness-versions/<bundle-hash>/` — bundle-specific source + `node_modules` after first `pnpm install`
-- `runtime/` — Node, pnpm-global, manifest
-- `dsh-home/` — fallback session data when no existing Harness home is found
-- `bin/` — spawnable `dsh.exe` / `dsh.cmd` / `pnpm.cmd` written onto the Host PATH and, when missing, the user Path
-- `cache/` — downloaded Node zip or tarball
+The desktop overlay injects a Content Security Policy and no-referrer policy into the served workbench. The Tauri-owned splash and shell also have a CSP; the workbench keeps `unsafe-eval` because Cordis client plugins are evaluated dynamically, while objects and base-URL mutation remain disabled.
 
-First launch scans the process `PATH` (on Windows, plus the durable user and machine Path) and well-known install locations for Node `^22.19 || >=24` and a usable pnpm before any mirror fetch. It then adopts `$DSH_HOME` (process or, on Windows, the user/machine environment) or `~/.dsh` when that directory already holds sessions, credentials, `.env`, profiles, or settings, and copies missing files from the isolated `dsh-home/` into the selected home. It writes spawnable `dsh` / `pnpm` shims (`dsh.exe` is the desktop binary running as a CLI trampoline) and prepends the selected Node / pnpm directories (plus Git `cmd`/`bin` when `git` or `bash` is missing on that discovery PATH) onto the Host PATH so in-app `spawn('dsh')`, `dsh plugin`, MCP `npx`, and agent `bash`/`git` lookups resolve. Windows does not write an extensionless `dsh` file. Windows Host and CLI children do not allocate a console when the parent has no visible console. The user Path receives the shim directory via the registry, and the Node or pnpm directory only when that command is still absent as a spawnable file. The provisioner still downloads Node for Windows x64/x86, macOS x64/arm64, and Linux x64/arm64 when the scan finds none. Zip and tar.gz extraction reject entries outside the expected Node archive root. Unix archives retain executable permissions. A privately installed pnpm runs through the selected Node binary; a host pnpm is invoked directly. Bundle-specific harness directories let an update provision new source without deleting files used by an older running Host; compatible Node and pnpm runtimes are reused across source updates. The bundled workspace file is derived from the repository's `pnpm-workspace.yaml` with only the package membership trimmed. When provisioning fails, the app reuses the newest harness tree whose dependencies are installed; install and download steps have deadlines, and provisioning keeps the three newest harness trees. The native shell permits one application instance and focuses the existing window on repeated launches. Release builds check for an update after the main window opens; update-network or manifest failures are logged and do not hold the splash. A ready runtime manifest skips the host toolchain scan and compares Node by file size instead of hashing `node.exe`. Window chrome, tray, updater, toast, and completion sound stay in this Rust crate. Host collaboration is an overlay plugin copied into `$DSH_HOME/desktop-overlay` and loaded with `dsh web --patch`; `packages/` is not modified.
+## Commands
 
-## Build
+Run from the repository root:
 
-From the repo root (needs built CLI + web dist):
-
-```powershell
+```sh
+pnpm install --frozen-lockfile
 pnpm run build
-cd apps/desktop-tauri
-pnpm install
-$env:TAURI_SIGNING_PRIVATE_KEY=(Get-Content "$HOME\.tauri\deepseek-desktop-updater.key" -Raw)
-$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD=(Get-Content "$HOME\.tauri\deepseek-desktop-updater.key.password" -Raw)
-pnpm run build:win
+pnpm --dir apps/desktop-tauri run test:bundle
+pnpm --dir apps/desktop-tauri run test:offline
+pnpm --dir apps/desktop-tauri run test:overlay
+pnpm --dir apps/desktop-tauri run test:update-manifest
+pnpm --dir apps/desktop-tauri run test:release-version
+pnpm --dir apps/desktop-tauri run prepare:product-runtime
+pnpm --dir apps/desktop-tauri run build
 ```
 
-Installer output: `src-tauri/target/release/bundle/nsis/DeepSeek Harness_0.1.1-rc.1-0.1_x64-setup.exe`
+The current target is `aarch64-apple-darwin`; the release workflow intentionally has no Windows, Intel macOS, or Linux matrix rows.
 
-The NSIS installer bundles **English**, **Simplified Chinese**, and **Traditional Chinese**. Language follows the OS locale automatically (no language picker); if the locale is unsupported, English is used. Native splash, tray, close-dialog, and splash-status copy follow the same rule (`zh*` → Chinese, otherwise English). The embedded `dsh web` client keeps its own Settings language. Before copying files, the installer silently closes `dsh-desktop.exe` and its child process tree. After installation, it recreates an existing desktop shortcut with the versioned standalone ICO resource and notifies Explorer to invalidate stale icon cache entries.
-
-## Release
-
-Pushing a `desktop-v*` tag runs [the desktop release workflow](../../.github/workflows/desktop-release.yml). It builds Windows x64/x86 NSIS installers, macOS Intel/Apple Silicon DMGs, and Linux x64 AppImage/deb packages, then publishes one GitHub Release after every matrix job succeeds. The workflow signs each updater artifact, generates the Tauri `latest.json` from the bilingual [release notes](release-notes.md), and replaces the manifest in the stable `desktop-updater` release channel. A manual dispatch rebuilds an existing tag.
-
-Release asset names include the operating system and architecture. Updater signatures authenticate artifacts to installed applications, but the executables are not operating-system code-signed or notarized, so Windows SmartScreen, macOS Gatekeeper, or Linux desktop security prompts may require explicit approval.
-
-All Windows, macOS, and Linux icons are generated from `app-icon.svg`, which carries the same background-free black fish path as `packages/client/ui-primitives/src/FishLogo.tsx`. The Tauri bundle, NSIS installer/uninstaller, splash window, main title bar, taskbar, Dock, and Linux desktop entry use that icon set. Windows installation also includes a version-qualified ICO file so shortcut icon lookup does not reuse an older executable-path cache key.
-
-Bundle only (no Tauri):
-
-```powershell
-node scripts/bundle-harness-source.mjs
-```
-
-## Run
-
-**Dev (monorepo checkout):**
-
-```powershell
-# repo root: pnpm run build  (once)
-cd apps/desktop-tauri
-$env:DSH_DESKTOP_LAUNCH='local'
-pnpm run dev
-```
-
-**Installed app:** run the NSIS installer; first launch shows splash while it scans the host, matches an existing `~/.dsh` home, installs missing tools or deps, then opens the web UI.
-
-## Scripts
-
-| Script | Purpose |
-|---|---|
-| `scripts/bundle-harness-source.mjs` | Trim + copy monorepo slice → `bundled/harness/` |
-| `scripts/prepare-dist.mjs` | Splash dist + bundle (Tauri `beforeBuildCommand`) |
-| `scripts/serve-dist.mjs` | Static server for `tauri dev` splash |
-| `overlay/desktop-notify/` | Cordis overlay: POST completed turns to the native notify port |
+The macOS arm64 release gate starts with an isolated, empty `XIAOHUI_APP_DATA_DIR` and deliberately unreachable Node/npm mirrors. It must provision bundled Node 22.19.0 and pnpm 11.7.0, complete the frozen offline install, and serve the workbench with HTTP 200. Acceptance checks require the XiaoHui product title, the Harbor, Codex Auth, and Better Sidebar client bundles in the Web boot manifest, and all product rows in Host configuration. The portable runtime reports Harbor 0.21.0 and discovers the `dsh-evolution` Python plugin.

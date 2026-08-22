@@ -14,6 +14,8 @@ Status: implemented
 
 **与 Host 的协作是 overlay 插件，不是改包。** 外壳把 `overlay/desktop-notify/index.mjs` 复制到 `$DSH_HOME/desktop-overlay`，写入插件 `name` 为 `file://` URL 的 `--patch` 列表，再启动 `dsh web --patch <该文件>`。Windows 盘符路径（如 `C:/...`）不是合法 ESM specifier——Node 会把 `C:` 当成 URL scheme——因此 overlay 必须写成 `file:///C:/...`（空格做百分号编码）。插件监听 `session/event` 中 `turn/end` 且 `reason.kind === 'completed'`，并向 `DSH_DESKTOP_NOTIFY_URL` 给出的本机通知 URL 发送 POST。Rust 监听端只在主窗口不在前台时弹出系统通知并播放 `sounds/complete.wav`。
 
+[XiaoHui 产品化 AI 工作台发行](../feature/2026-08-22-xiaohui-product-workbench.zh.md)在同一份原生 Overlay Patch 中加入必需的 Harbor 插件节点与可执行路径，不把产品行为移入 Harness Package。
+
 **更新仍使用带签名的 Tauri updater。** 签名检查在主窗口打开之后再跑，避免网络失败或超时拖住启动页。托盘「检查更新」按需运行同一套签名检查。
 
 这是对[跨平台桌面源码预配](../feature/2026-08-14-cross-platform-desktop-source-provisioning.zh.md)的延伸，并不把桌面行为移进 `packages/`。

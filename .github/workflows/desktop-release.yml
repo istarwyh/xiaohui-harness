@@ -1,60 +1,32 @@
-name: Desktop Release
+name: XiaoHui macOS Release
 
 on:
   push:
     tags:
-      - desktop-v*
+      - xiaohui-v*
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing desktop-v* tag to rebuild and publish
+        description: Existing xiaohui-v* tag to rebuild and publish
         required: true
-        default: desktop-v0.1.1-rc.1-0.1
+        default: xiaohui-v0.2.0
 
 permissions:
   contents: write
 
 concurrency:
-  group: desktop-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  group: xiaohui-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
   NODE_VERSION: '24'
+  RUST_TARGET: aarch64-apple-darwin
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
   build:
-    name: Build ${{ matrix.asset_platform }}-${{ matrix.asset_arch }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
-            bundles: nsis
-            asset_platform: windows
-            asset_arch: x64
-          - runner: windows-2025
-            target: i686-pc-windows-msvc
-            bundles: nsis
-            asset_platform: windows
-            asset_arch: x86
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            bundles: app,dmg
-            asset_platform: macos
-            asset_arch: x64
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            bundles: app,dmg
-            asset_platform: macos
-            asset_arch: arm64
-          - runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            bundles: appimage,deb
-            asset_platform: linux
-            asset_arch: x64
+    name: Build macOS arm64
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -72,70 +44,66 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install Linux bundle dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -yq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+      - name: Verify release tag and desktop versions
+        run: node apps/desktop-tauri/scripts/verify-release-version.mjs --tag "$RELEASE_TAG"
+
+      - uses: astral-sh/setup-uv@v6
 
       - name: Install Rust target
-        run: rustup target add ${{ matrix.target }}
+        run: rustup target add "$RUST_TARGET"
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build harness
+      - name: Test desktop release assembly
+        run: |
+          pnpm --dir apps/desktop-tauri run test:bundle
+          pnpm --dir apps/desktop-tauri run test:offline
+          pnpm --dir apps/desktop-tauri run test:overlay
+          pnpm --dir apps/desktop-tauri run test:update-manifest
+          pnpm --dir apps/desktop-tauri run test:release-version
+
+      - name: Build Harness
+        env:
+          DSH_CLIENT_TITLE: XiaoHui Harness
         run: pnpm run build
 
-      - name: Build desktop bundles
+      - name: Build XiaoHui product runtime
+        run: pnpm --dir apps/desktop-tauri run prepare:product-runtime
+
+      - name: Build app and DMG
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm --dir apps/desktop-tauri exec tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+        run: pnpm --dir apps/desktop-tauri run build
+
+      - name: Test native desktop runtime
+        run: cargo test --locked --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml
 
       - name: Stage release assets
         shell: pwsh
-        env:
-          ASSET_ARCH: ${{ matrix.asset_arch }}
-          ASSET_PLATFORM: ${{ matrix.asset_platform }}
-          RUST_TARGET: ${{ matrix.target }}
         run: |
           $version = (Get-Content apps/desktop-tauri/package.json | ConvertFrom-Json).version
           $bundleRoot = "apps/desktop-tauri/src-tauri/target/$env:RUST_TARGET/release/bundle"
           New-Item -ItemType Directory -Force release-assets | Out-Null
 
-          if ($env:ASSET_PLATFORM -eq 'windows') {
-            $source = Get-ChildItem $bundleRoot -Recurse -File -Filter '*-setup.exe' | Select-Object -First 1
-            if (-not $source) { throw "NSIS installer not found under $bundleRoot" }
-            $signature = Get-Item "$($source.FullName).sig" -ErrorAction Stop
-            $destination = "release-assets/deepseek-harness-$version-windows-$env:ASSET_ARCH-setup.exe"
-            Copy-Item $source.FullName $destination
-            Copy-Item $signature.FullName "$destination.sig"
-          }
-          elseif ($env:ASSET_PLATFORM -eq 'macos') {
-            $source = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.dmg' | Select-Object -First 1
-            $updater = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.app.tar.gz' | Select-Object -First 1
-            if (-not $source -or -not $updater) { throw "DMG or updater archive not found under $bundleRoot" }
-            $signature = Get-Item "$($updater.FullName).sig" -ErrorAction Stop
-            Copy-Item $source.FullName "release-assets/deepseek-harness-$version-macos-$env:ASSET_ARCH.dmg"
-            $updaterDestination = "release-assets/deepseek-harness-$version-macos-$env:ASSET_ARCH.app.tar.gz"
-            Copy-Item $updater.FullName $updaterDestination
-            Copy-Item $signature.FullName "$updaterDestination.sig"
-          }
-          else {
-            $appImage = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.AppImage' | Select-Object -First 1
-            $deb = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.deb' | Select-Object -First 1
-            if (-not $appImage -or -not $deb) { throw "Linux AppImage or deb not found under $bundleRoot" }
-            $signature = Get-Item "$($appImage.FullName).sig" -ErrorAction Stop
-            $appImageDestination = "release-assets/deepseek-harness-$version-linux-$env:ASSET_ARCH.AppImage"
-            Copy-Item $appImage.FullName $appImageDestination
-            Copy-Item $signature.FullName "$appImageDestination.sig"
-            Copy-Item $deb.FullName "release-assets/deepseek-harness-$version-linux-$env:ASSET_ARCH.deb"
-          }
+          $dmg = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.dmg' | Select-Object -First 1
+          $updater = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.app.tar.gz' | Select-Object -First 1
+          if (-not $dmg -or -not $updater) { throw "DMG or updater archive not found under $bundleRoot" }
+          $signature = Get-Item "$($updater.FullName).sig" -ErrorAction Stop
+
+          Copy-Item $dmg.FullName "release-assets/xiaohui-harness-$version-macos-arm64.dmg"
+          $updaterDestination = "release-assets/xiaohui-harness-$version-macos-arm64.app.tar.gz"
+          Copy-Item $updater.FullName $updaterDestination
+          Copy-Item $signature.FullName "$updaterDestination.sig"
+          Get-ChildItem release-assets -File | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          } | Set-Content -NoNewline:$false release-assets/SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.asset_platform }}-${{ matrix.asset_arch }}
+          name: xiaohui-macos-arm64
           path: release-assets/*
           if-no-files-found: error
           retention-days: 14
@@ -153,33 +121,26 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: desktop-*
+          name: xiaohui-macos-arm64
           path: release-assets
-          merge-multiple: true
 
       - name: Verify release asset set
         shell: pwsh
         run: |
           $expected = @(
-            '*-windows-x64-setup.exe',
-            '*-windows-x64-setup.exe.sig',
-            '*-windows-x86-setup.exe',
-            '*-windows-x86-setup.exe.sig',
-            '*-macos-x64.dmg',
-            '*-macos-x64.app.tar.gz',
-            '*-macos-x64.app.tar.gz.sig',
             '*-macos-arm64.dmg',
             '*-macos-arm64.app.tar.gz',
             '*-macos-arm64.app.tar.gz.sig',
-            '*-linux-x64.AppImage',
-            '*-linux-x64.AppImage.sig',
-            '*-linux-x64.deb'
+            'SHA256SUMS.txt'
           )
           foreach ($pattern in $expected) {
             if (-not (Get-ChildItem release-assets -File -Filter $pattern)) {
               throw "Missing release asset matching $pattern"
             }
           }
+
+      - name: Verify release checksums
+        run: cd release-assets && sha256sum --check SHA256SUMS.txt
 
       - name: Generate updater manifest
         shell: pwsh
@@ -202,13 +163,13 @@ jobs:
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release-assets/* --clobber
-            gh release edit "$RELEASE_TAG" --title "DeepSeek Harness Desktop ${RELEASE_TAG#desktop-v}" --notes-file apps/desktop-tauri/release-notes.md --latest
+            gh release edit "$RELEASE_TAG" --title "XiaoHui Harness ${RELEASE_TAG#xiaohui-v}" --notes-file apps/desktop-tauri/release-notes.md --latest
           else
-            gh release create "$RELEASE_TAG" release-assets/* --verify-tag --title "DeepSeek Harness Desktop ${RELEASE_TAG#desktop-v}" --notes-file apps/desktop-tauri/release-notes.md --latest
+            gh release create "$RELEASE_TAG" release-assets/* --verify-tag --title "XiaoHui Harness ${RELEASE_TAG#xiaohui-v}" --notes-file apps/desktop-tauri/release-notes.md --latest
           fi
 
-          if gh release view desktop-updater >/dev/null 2>&1; then
-            gh release upload desktop-updater release-assets/latest.json --clobber
+          if gh release view xiaohui-updater >/dev/null 2>&1; then
+            gh release upload xiaohui-updater release-assets/latest.json --clobber
           else
-            gh release create desktop-updater release-assets/latest.json --target "$(git rev-parse HEAD)" --title "DeepSeek Harness Desktop update channel" --notes "Stable signed-update manifest channel. Installers are published in versioned desktop releases. / 稳定的签名更新 manifest 通道。安装包发布在带版本号的 desktop Release 中。" --prerelease
+            gh release create xiaohui-updater release-assets/latest.json --target "$(git rev-parse HEAD)" --title "XiaoHui Harness update channel" --notes "Signed macOS arm64 update manifest." --prerelease
           fi

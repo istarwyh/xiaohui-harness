@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildTrimmedWorkspaceYaml } from './bundle-harness-source.mjs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import {
+  buildTrimmedWorkspaceYaml,
+  hashPublishedSnapshot,
+  installProductPlugins,
+} from './bundle-harness-source.mjs'
 
 test('buildTrimmedWorkspaceYaml keeps upstream patch and build declarations verbatim', () => {
   const source = `packages:
@@ -56,4 +64,53 @@ linkWorkspacePackages: true
 
 test('buildTrimmedWorkspaceYaml rejects a workspace without a packages block', () => {
   assert.throws(() => buildTrimmedWorkspaceYaml('linkWorkspacePackages: true\n'), /packages/)
+})
+
+test('hashPublishedSnapshot ignores only the XiaoHui provenance sidecar', () => {
+  const root = mkdtempSync(join(tmpdir(), 'xiaohui-published-plugin-'))
+  try {
+    writeFileSync(join(root, 'package.json'), '{"name":"example"}\n')
+    const before = hashPublishedSnapshot(root)
+    writeFileSync(join(root, 'XIAOHUI_UPSTREAM.json'), '{"treeSha256":"recorded"}\n')
+    assert.equal(hashPublishedSnapshot(root), before)
+    writeFileSync(join(root, 'package.json'), '{"name":"changed"}\n')
+    assert.notEqual(hashPublishedSnapshot(root), before)
+  }
+  finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('installProductPlugins makes every XiaoHui plugin an in-box CLI dependency', () => {
+  const root = mkdtempSync(join(tmpdir(), 'xiaohui-product-plugin-'))
+  const cli = join(root, 'apps', 'cli')
+  mkdirSync(cli, { recursive: true })
+  writeFileSync(join(cli, 'package.json'), '{"dependencies":{"kept":"1.0.0"}}\n')
+  const agent = join(root, 'packages', 'core', 'agent')
+  mkdirSync(agent, { recursive: true })
+  writeFileSync(join(agent, 'package.json'), '{"name":"@deepseek-ai/dsh-agent","version":"0.1.1-rc.1"}\n')
+
+  try {
+    installProductPlugins(root)
+    const manifest = JSON.parse(readFileSync(join(cli, 'package.json'), 'utf8'))
+    assert.equal(manifest.dependencies.kept, '1.0.0')
+    assert.equal(manifest.dependencies['dsh-harbor-evolution'], 'workspace:*')
+    assert.equal(manifest.dependencies['dsh-codex-auth'], 'workspace:*')
+    assert.equal(manifest.dependencies['dsh-better-sidebar'], 'workspace:*')
+    assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent'], 'workspace:*')
+    assert.ok(readFileSync(join(root, 'packages', 'product', 'harbor-evolution', 'skills', 'evolve-agent-with-harbor', 'SKILL.md'), 'utf8').length > 0)
+    assert.equal(
+      JSON.parse(readFileSync(join(root, 'packages', 'product', 'dsh-codex-auth', 'package.json'), 'utf8')).version,
+      '0.3.0',
+    )
+    assert.equal(
+      JSON.parse(readFileSync(join(root, 'packages', 'product', 'dsh-better-sidebar', 'package.json'), 'utf8')).version,
+      '0.15.1',
+    )
+    assert.ok(readFileSync(join(root, 'packages', 'product', 'dsh-codex-auth', 'lib', 'client.js'), 'utf8').length > 0)
+    assert.ok(readFileSync(join(root, 'packages', 'product', 'dsh-better-sidebar', 'lib', 'client.js'), 'utf8').length > 0)
+  }
+  finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

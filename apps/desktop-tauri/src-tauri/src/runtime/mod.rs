@@ -120,14 +120,30 @@ pub fn boot_kind(settings: &DesktopSettings) -> AgentEnvironment {
 }
 
 pub fn app_data_root() -> Result<PathBuf, String> {
-    dirs::data_dir()
-        .map(|d| d.join("DeepSeek Harness"))
+    let override_path = std::env::var_os("XIAOHUI_APP_DATA_DIR").map(PathBuf::from);
+    resolve_app_data_root(override_path, dirs::data_dir())
+}
+
+fn resolve_app_data_root(
+    override_path: Option<PathBuf>,
+    platform_data_dir: Option<PathBuf>,
+) -> Result<PathBuf, String> {
+    if let Some(path) = override_path {
+        if !path.is_absolute() {
+            return Err("XIAOHUI_APP_DATA_DIR must be an absolute path".into());
+        }
+        return Ok(path);
+    }
+    platform_data_dir
+        .map(|d| d.join("XiaoHui Harness"))
         .ok_or_else(|| "cannot resolve application data directory".into())
 }
 
 #[cfg(test)]
 mod boot_kind_tests {
-    use super::boot_kind;
+    use std::path::PathBuf;
+
+    use super::{boot_kind, resolve_app_data_root};
     use crate::desktop_settings::{AgentEnvironment, DesktopSettings};
 
     #[test]
@@ -146,6 +162,27 @@ mod boot_kind_tests {
                 ..DesktopSettings::default()
             }),
             AgentEnvironment::Wsl
+        );
+    }
+
+    #[test]
+    fn app_data_override_must_be_absolute() {
+        assert_eq!(
+            resolve_app_data_root(Some(PathBuf::from("relative")), None).unwrap_err(),
+            "XIAOHUI_APP_DATA_DIR must be an absolute path"
+        );
+    }
+
+    #[test]
+    fn absolute_app_data_override_wins() {
+        let override_path = PathBuf::from("/tmp/xiaohui-test-data");
+        assert_eq!(
+            resolve_app_data_root(
+                Some(override_path.clone()),
+                Some(PathBuf::from("/platform/data"))
+            )
+            .unwrap(),
+            override_path
         );
     }
 }

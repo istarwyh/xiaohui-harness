@@ -7,7 +7,7 @@ use super::app_data_root;
 
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
-/// Open `%APPDATA%/DeepSeek Harness/boot.log` for append-only boot diagnostics.
+/// Open the XiaoHui app-data `boot.log` for append-only boot diagnostics.
 pub fn init() -> Result<(), String> {
     let root = app_data_root()?;
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;

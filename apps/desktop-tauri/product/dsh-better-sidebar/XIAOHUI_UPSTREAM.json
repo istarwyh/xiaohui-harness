@@ -1,0 +1,13 @@
+{
+  "package": "dsh-better-sidebar",
+  "version": "0.15.1",
+  "source": "https://registry.npmjs.org/dsh-better-sidebar/-/dsh-better-sidebar-0.15.1.tgz",
+  "integrity": "sha512-1nTv2KVOwYMcszUmBWLhqCwfeXXQH0pm3NgMIchtGIboG4tTeLe9uE8bifa5rynj29Sk2+Gj7O6JcKTfmxJu+Q==",
+  "upstreamTreeSha256": "d92184c19fbd238e86ac8b08e35c90c325f474562c6f4d962be55b6a4794d766",
+  "treeSha256": "1afc473696460fd28d9cc02643867ac4fdc6e9000bc361c0e10e55221fcdff9e",
+  "patches": [
+    "Align stale @deepseek-ai/dsh-* peer ranges with the package's own 0.1.1-rc.1 development baseline and XiaoHui's bundled Harness."
+  ],
+  "repository": "https://github.com/omdsh-dev/DSH-better-sidebar",
+  "license": "MIT"
+}

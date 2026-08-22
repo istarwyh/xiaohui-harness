@@ -43,8 +43,12 @@ pub fn prepare_host_path(
             return Ok(merge_path(Some(discovery_path()), &[]));
         }
     };
-    if let Err(error) = persist_user_path(&bridge) {
-        boot_log::info(&format!("user PATH persist skipped: {error}"));
+    if user_cli_persistence_enabled(std::env::var_os("XIAOHUI_PERSIST_DSH_CLI").as_deref()) {
+        if let Err(error) = persist_user_path(&bridge) {
+            boot_log::info(&format!("user PATH persist skipped: {error}"));
+        }
+    } else {
+        boot_log::info("user PATH persist disabled for isolated XiaoHui product");
     }
     let merged = merge_path(Some(discovery_path()), &bridge.prepend);
     std::env::set_var("PATH", &merged);
@@ -59,6 +63,10 @@ pub fn prepare_host_path(
             .join(";")
     ));
     Ok(merged)
+}
+
+fn user_cli_persistence_enabled(value: Option<&std::ffi::OsStr>) -> bool {
+    value == Some(std::ffi::OsStr::new("1"))
 }
 
 /// Create shims and collect directories that must precede the inherited PATH.
@@ -598,7 +606,7 @@ fn path_string_contains(path: &str, candidate: &Path) -> bool {
 mod tests {
     use super::{
         exe_needs_refresh, merge_path, path_string_contains, pnpm_shim_body, quote_for_cmd,
-        tool_exists_in, write_cli_shims,
+        tool_exists_in, user_cli_persistence_enabled, write_cli_shims,
     };
     use crate::cli_shim::{read_launch_spec, LAUNCH_FILE};
     use std::fs;
@@ -627,10 +635,19 @@ mod tests {
 
     #[test]
     fn prepends_missing_dirs_without_duplicating_existing_path() {
+        #[cfg(windows)]
         let first = PathBuf::from("C:\\DeepSeek Harness\\bin");
+        #[cfg(windows)]
         let second = PathBuf::from("C:\\DeepSeek Harness\\runtime\\node");
-        let existing =
-            std::env::join_paths([&second, &PathBuf::from("C:\\Windows\\System32")]).unwrap();
+        #[cfg(windows)]
+        let system = PathBuf::from("C:\\Windows\\System32");
+        #[cfg(not(windows))]
+        let first = PathBuf::from("/opt/xiaohui/bin");
+        #[cfg(not(windows))]
+        let second = PathBuf::from("/opt/xiaohui/runtime/node");
+        #[cfg(not(windows))]
+        let system = PathBuf::from("/usr/bin");
+        let existing = std::env::join_paths([&second, &system]).unwrap();
         let merged = merge_path(Some(existing), &[first.clone(), second.clone()]);
         let parts: Vec<PathBuf> = std::env::split_paths(&merged).collect();
         assert_eq!(parts[0], first);
@@ -641,6 +658,17 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn user_cli_persistence_is_explicit_opt_in() {
+        assert!(!user_cli_persistence_enabled(None));
+        assert!(!user_cli_persistence_enabled(Some(std::ffi::OsStr::new(
+            "true"
+        ))));
+        assert!(user_cli_persistence_enabled(Some(std::ffi::OsStr::new(
+            "1"
+        ))));
     }
 
     #[test]
@@ -730,7 +758,10 @@ mod tests {
     #[test]
     fn detects_a_tool_only_when_the_file_exists() {
         let root = temp_root();
+        #[cfg(windows)]
         fs::write(root.join("git.exe"), "").unwrap();
+        #[cfg(not(windows))]
+        fs::write(root.join("git"), "").unwrap();
         assert!(tool_exists_in(&root, "git"));
         assert!(!tool_exists_in(&root, "bash"));
         let _ = fs::remove_dir_all(&root);

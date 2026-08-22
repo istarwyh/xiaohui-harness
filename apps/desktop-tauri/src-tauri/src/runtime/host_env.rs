@@ -25,12 +25,17 @@ pub fn node_version_compatible(raw: &str) -> bool {
 
 /// Probe `binary --version` and return the first line when the process succeeds.
 pub fn tool_version(binary: &Path) -> Option<String> {
+    tool_output(binary, &["--version"])
+}
+
+/// Probe a command and return its first stdout line when it succeeds.
+fn tool_output(binary: &Path, args: &[&str]) -> Option<String> {
     if !binary.is_file() {
         return None;
     }
     let mut command = Command::new(binary);
     command
-        .arg("--version")
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     hide_console(&mut command);
@@ -47,11 +52,35 @@ pub fn tool_version(binary: &Path) -> Option<String> {
     }
 }
 
-/// True when `path` is an executable Node that satisfies the engine range.
+fn expected_node_identity() -> Option<String> {
+    let platform = match std::env::consts::OS {
+        "macos" => "darwin",
+        "windows" => "win32",
+        "linux" => "linux",
+        _ => return None,
+    };
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x64",
+        "x86" => "ia32",
+        _ => return None,
+    };
+    Some(format!("{platform}:{arch}"))
+}
+
+fn node_identity_compatible(raw: &str) -> bool {
+    expected_node_identity().is_some_and(|expected| raw.trim() == expected)
+}
+
+/// True when `path` is an executable Node with the required version and native architecture.
 pub fn node_binary_compatible(path: &Path) -> bool {
-    tool_version(path)
+    let version_ok = tool_version(path)
         .map(|version| node_version_compatible(&version))
-        .unwrap_or(false)
+        .unwrap_or(false);
+    let identity_ok = tool_output(path, &["-p", "process.platform + ':' + process.arch"])
+        .map(|identity| node_identity_compatible(&identity))
+        .unwrap_or(false);
+    version_ok && identity_ok
 }
 
 /// True when `path` is a spawnable pnpm that prints a version.
@@ -62,13 +91,9 @@ pub fn pnpm_binary_usable(path: &Path) -> bool {
 /// Scan PATH and well-known install locations after checking a preferred runtime.
 pub fn scan_host_toolchain(preferred_node: &Path, preferred_pnpm: &Path) -> HostToolchain {
     let node = first_compatible_node(node_candidates(preferred_node));
-    let mut pnpm_paths = pnpm_candidates(preferred_pnpm);
-    if let Some(node) = &node {
-        if let Some(dir) = node.parent() {
-            pnpm_paths.extend(sibling_pnpm_paths(dir));
-        }
-    }
-    let pnpm = first_usable_pnpm(dedup_paths(pnpm_paths));
+    // Only reuse the app-managed pnpm. A global pnpm can have been installed
+    // by a Node build for another CPU architecture even when its wrapper runs.
+    let pnpm = first_usable_pnpm(vec![preferred_pnpm.to_path_buf()]);
     HostToolchain { node, pnpm }
 }
 
@@ -227,7 +252,8 @@ fn dedup_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        node_version_compatible, parse_semver, pnpm_binary_usable, toolchain_status, HostToolchain,
+        expected_node_identity, node_identity_compatible, node_version_compatible, parse_semver,
+        pnpm_binary_usable, toolchain_status, HostToolchain,
     };
     use std::path::PathBuf;
 
@@ -258,6 +284,14 @@ mod tests {
     }
 
     #[test]
+    fn accepts_only_the_current_node_platform_and_architecture() {
+        let expected = expected_node_identity().expect("supported desktop target");
+        assert!(node_identity_compatible(&expected));
+        assert!(!node_identity_compatible("darwin:x64-wrong"));
+        assert!(!node_identity_compatible("linux:arm64-wrong"));
+    }
+
+    #[test]
     fn describes_scan_outcome_without_downloading() {
         let matched = HostToolchain {
             node: Some(PathBuf::from("node")),
@@ -268,6 +302,6 @@ mod tests {
             node: None,
             pnpm: None,
         };
-        assert!(toolchain_status(&missing).contains("将从镜像下载"));
+        assert!(toolchain_status(&missing).contains("安装包内置工具链"));
     }
 }
