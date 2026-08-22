@@ -170,7 +170,9 @@ jobs:
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
       DSH_OXLINT_THREADS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '2' }}
       DSH_PUBLINT_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '2' }}
-      DSH_WEB_SNAPSHOT_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '1' }}
+      # Empty selects the existing fully serial test:web:built path. Explicit
+      # worker counts intentionally start at two.
+      DSH_WEB_SNAPSHOT_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '' }}
       # Product forks serialize snapshot workers: several scenarios own real
       # shells or browser timing and are not stable when a four-core hosted
       # runner is simultaneously building and replaying another scenario.
