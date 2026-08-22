@@ -12,13 +12,19 @@ Status: implemented
 
 XiaoHui Harness 保留 Sakana Tauri 发行版的上游 Git 历史并作为产品 fork 演进。可复用的桌面进程监管、Harness 首次预配、通知 Overlay 与 Updater 留在 `apps/desktop-tauri`；产品装配也只位于这个子树，不修改 Agent Loop 或 Service Package。
 
-提交到 `apps/desktop-tauri/product/harbor-evolution` 的快照包含 `dsh-harbor-evolution@0.6.0` 和它的 `evolve-agent-with-harbor` Skill；相邻的 `product/harbor-python` 快照包含匹配的 Python Adapter 源码。`bundle-harness-source.mjs` 把 Cordis 快照复制到裁剪后的 workspace，并加入内置 CLI 的依赖闭包。桌面 Overlay 在 Web Profile 之后插入 `harbor-evolution` Cordis 节点，因此首次启动不需要下载或手动安装产品插件。
+提交到 `apps/desktop-tauri/product/harbor-evolution` 的快照包含 `dsh-harbor-evolution@0.6.0` 和它的 `evolve-agent-with-harbor` Skill；相邻的 `product/harbor-python` 快照包含匹配的 Python Adapter 源码。`product/dsh-codex-auth` 保存经过检查的 `dsh-codex-auth@0.3.0` npm 产物，`product/dsh-better-sidebar` 保存 `dsh-better-sidebar@0.15.1`。两个社区快照都保留上游许可证，并在 `XIAOHUI_UPSTREAM.json` 中记录准确的 Registry Tarball 和 Integrity 值。它们还记录了纯 Metadata 修正，把 DSH Peer 固定到 XiaoHui 内置的 `0.1.1-rc.1` Runtime，并同时记录修正前后的目录 Hash；插件可执行代码与发布产物逐字节一致。
+
+`bundle-harness-source.mjs` 把三个 Cordis Package 复制到裁剪后的 workspace，并加入内置 CLI 的依赖闭包。桌面 Overlay 在 Web Profile 之后插入 Codex Auth、Search、Image、Better Sidebar 与 Harbor Evolution 节点，同时选择 Codex Search Provider。因此首次启动解析的是已提交的插件代码，而不是安装持续变化的 `latest` Package。提交的产品 Lockfile 固定其余生产依赖图；发布构建把依赖抓取进绑定校验和的压缩 Store，产品自有 pnpm 再以冻结、离线语义重建 `node_modules`。
 
 `prepare-xiaohui-runtime.mjs` 构建包含便携式 CPython 3.12、已提交的 `harbor-dsh-evolution==0.6.0` 源码与 Harbor 的 macOS arm64 资源。生成的虚拟环境只使用相对解释器链接，直接从应用资源运行，并以源码树 Digest 作为失效条件。脚本接受 `XIAOHUI_HARBOR_PYTHON_SOURCE` 作为临时覆盖。`sync-product-plugin.mjs` 通过显式白名单从本地 Harbor Checkout 同步两份产品快照。
 
-原生 Host 始终使用平台应用数据目录下的 `XiaoHui Harness/dsh-home`，并创建 `XiaoHui Harness/workspace/jobs`；它不会接管或导入 `DSH_HOME` 与 `~/.dsh`。对 XiaoHui 的原生启动而言，这个产品覆盖取代了[桌面端主机工具链扫描与主目录匹配](2026-08-14-desktop-host-env-and-home-adoption.zh.md)中的主目录接管，同时保留原生架构的宿主 Node 发现，并以产品自有 pnpm 取代全局 pnpm 复用。产品 Overlay 在[桌面外壳 Overlay 插件](../architecture/2026-08-14-desktop-shell-overlay-plugins.zh.md)之上加入必需的 Harbor 节点；缺失产品 Runtime 会导致启动失败，通知投递仍然是可降级能力。
+原生 Host 始终使用平台应用数据目录下的 `XiaoHui Harness/dsh-home`，并创建 `XiaoHui Harness/workspace/jobs`；它不会接管或导入 `DSH_HOME` 与 `~/.dsh`。对 XiaoHui 的原生启动而言，这个产品覆盖取代了[桌面端主机工具链扫描与主目录匹配](2026-08-14-desktop-host-env-and-home-adoption.zh.md)中的主目录接管，同时保留原生架构的宿主 Node 发现，并以产品自有 pnpm 取代全局 pnpm 复用。产品 Overlay 在[桌面外壳 Overlay 插件](../architecture/2026-08-14-desktop-shell-overlay-plugins.zh.md)之上加入必需的产品节点；缺失 Harbor Runtime 会导致启动失败，通知投递仍然是可降级能力。Codex Auth 只在 Host 侧读取官方 Codex CLI 的登录状态，不会把 Token 移入浏览器设置。Better Sidebar 经过检查的 `node-pty` 构建由现有 workspace 的 `allowBuilds` 策略覆盖。
 
-原生 Provisioner 只会复用版本与 `process.platform:process.arch` 都匹配目标平台的 Node。它不会接管全局 pnpm，而是准备产品固定版本，避免由另一种 Node 架构安装的 Wrapper 或 Native Package 进入首次启动依赖图。
+原生 Provisioner 只会复用版本与 `process.platform:process.arch` 都匹配目标平台的 Node。它不会接管全局 pnpm，而是准备产品固定版本，避免由另一种 Node 架构安装的 Wrapper 或 Native Package 进入首次启动依赖图。macOS arm64 Node 与 pnpm 归档在源码中通过 Digest 固定。生成的 Bundle Manifest 记录 Store 归档 Digest；展开前必须验证，安装成功后则从可写 Harness 树中删除归档与展开后的 Store。约 35,000 个 Store 文件会压缩为单个资源，避免 Tauri 打包一棵看似可变的大目录或跟随平台专用链接。
+
+私有 `dsh`、Node 与 pnpm Shim 只会前置到 Host 进程树。产品默认不持久化全局 `dsh` 命令，也不编辑 Shell Profile；`XIAOHUI_PERSIST_DSH_CLI=1` 是仅供开发者显式开启的选项。
+
+桌面 Overlay 还通过 `webserver/index-inject` 提供工作台 Content Security Policy 与 `no-referrer` 策略；Tauri 自有启动页和 Shell 使用单独的 CSP。Cordis 客户端执行需要 `unsafe-eval`，但 Object 嵌入和 Base URL 修改均被禁用。
 
 发布目标仅为 `aarch64-apple-darwin`。`xiaohui-v*` Tag 先构建并签名 App/Updater，再独立封装 DMG，最后恢复并重新签名 App/Updater，然后发布 arm64 资产集合。这个产品发行集合取代了[跨平台桌面源码预配](2026-08-14-cross-platform-desktop-source-provisioning.zh.md)中的平台矩阵；底层预配代码仍可供未来平台复用。Apple 代码签名与公证凭据和 XiaoHui 专用的 Tauri Updater 签名是两套独立凭据。
 
@@ -28,7 +34,7 @@ XiaoHui Harness 保留 Sakana Tauri 发行版的上游 Git 历史并作为产品
 
 **重新开发桌面外壳。** 不采用，因为 Sakana 外壳已经负责首次预配、进程树回收、启动恢复、托盘、通知和签名更新。重新实现会产生第二套生命周期系统，却不会增加产品价值。
 
-**首次启动时下载 Harbor 组件。** 不采用，因为用户已经下载应用后，产品能力仍会依赖 npm、PyPI、`uv` 和解释器安装。Harness 的生产依赖仍可能需要首次联网，但 XiaoHui 的领域能力是安装包内固定的资源。
+**首次启动时下载组件或生产依赖。** 不采用，因为用户已经下载应用后，产品能力仍会依赖 npm、PyPI、Node 镜像、`uv` 和解释器安装。XiaoHui 把领域能力和其余生产依赖图都作为安装包内的固定资源交付。
 
 **接管用户已有的 Harness 主目录。** 不采用，因为产品应用不应静默向另一套独立管理的 Harness 环境加入 Bundle 或配置。只有建立显式迁移流程后，用户数据才会被导入。
 
@@ -36,4 +42,4 @@ XiaoHui Harness 保留 Sakana Tauri 发行版的上游 Git 历史并作为产品
 
 ## Consequences
 
-安装一个 DMG 就能得到命名明确的 AI 工作台，Harbor 插件、Skill 与 Python 命令统一固定在 `0.6.0`。开发者通过显式命令刷新两份产品快照，并能从已提交的插件代码和 Registry 解析的 Python 依赖复现发行包。macOS arm64 验收已经验证受控 Node 22.19.0、受控 pnpm 11.7.0、HTTP 200 启动、Web Boot Manifest 中的 Harbor 客户端模块、Harbor 0.21.0 和 Python 插件发现。代价是安装包因携带 CPython 与 Harbor 而变大，首次启动仍会安装 Harness 的 Node 依赖，Harbor Job 仍依赖 Docker；在配置 Apple 发布凭据前，未签名或未公证的 DMG 需要用户手动通过 Gatekeeper。
+安装一个 DMG 就能得到命名明确的 AI 工作台，Harbor 插件、Skill 与 Python 命令统一固定在 `0.6.0`，Codex Auth `0.3.0` 和 Better Sidebar `0.15.1` 也已经挂载。开发者通过显式命令刷新产品快照，并能从已提交的插件代码、冻结 Lockfile 与经过 Digest 验证的构建输入复现发行包。macOS arm64 验收会在镜像地址故意不可达时验证内置 Node 22.19.0、内置 pnpm 11.7.0、冻结离线安装、HTTP 200 启动、XiaoHui 标题、Web Boot Manifest 中的三个客户端 Bundle、全部产品 Host 节点、Harbor 0.21.0 和 Python 插件发现。代价是安装包因携带 CPython、Harbor、Codex Auth、Better Sidebar 和压缩的 Node 依赖图而变大；Harbor Job 仍依赖 Docker，Codex Auth 仍是非官方的本机单用户集成；在配置 Apple 发布凭据前，临时签名且未公证的 DMG 需要用户手动通过 Gatekeeper。

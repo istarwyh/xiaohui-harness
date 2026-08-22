@@ -1,0 +1,14 @@
+# One installable Codex Capability Bundle with independently enabled Host rows.
+# Select Codex globally rather than relying on single-provider auto-selection;
+# a later user profile patch can still override this deployment choice.
+- id: web
+  config:
+    searchProvider: codex
+
+- insert:
+    - id: llm-codex-auth
+      name: 'dsh-codex-auth'
+    - id: codex-search
+      name: 'dsh-codex-auth/search'
+    - id: codex-image
+      name: 'dsh-codex-auth/image'

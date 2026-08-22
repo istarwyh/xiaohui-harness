@@ -6,7 +6,7 @@
   <img src="apps/desktop-tauri/app-icon.png" width="120" height="120" alt="XiaoHui Harness" />
 </p>
 
-XiaoHui Harness 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 和成熟的 [Sakana 桌面发行版](https://github.com/Sakana-yuyu/deepseek-harness-desktop)构建的 macOS AI 工作台。它把 `dsh-harbor-evolution` 插件、`evolve-agent-with-harbor` Skill 和便携式 Harbor Python 运行时封装成一个应用。
+XiaoHui Harness 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 和成熟的 [Sakana 桌面发行版](https://github.com/Sakana-yuyu/deepseek-harness-desktop)构建的 macOS AI 工作台。它把 Harbor Evolution 及其 Skill、[dsh-codex-auth](https://github.com/suntianc/dsh-codex-auth)、[dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)和便携式 Harbor Python 运行时封装成一个应用。
 
 首个版本仅支持 Apple Silicon。应用把会话、Profile、工作区和 Job 保存在 `~/Library/Application Support/XiaoHui Harness`，不会读取或修改用户已有的 `~/.dsh` 主目录。
 
@@ -15,12 +15,12 @@ XiaoHui Harness 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deep
 | 层 | 交付方式 |
 |---|---|
 | 桌面外壳 | Tauri 2 窗口、托盘、通知、进程监管、启动恢复与签名更新 |
-| Harness | 裁剪并完成构建的 DeepSeek Harness 源码；首次启动只复用版本与 CPU 架构都兼容的 Node，准备产品自有 pnpm，再安装生产依赖 |
-| 产品插件 | `dsh-harbor-evolution@0.6.0` 的固定源码快照，包含 `evolve-agent-with-harbor` Skill |
+| Harness | 裁剪并完成构建的 DeepSeek Harness 源码、冻结的产品 Lockfile、压缩的离线依赖 Store，以及经过校验和固定的 macOS arm64 Node/pnpm 工具链 |
+| 产品插件 | `dsh-harbor-evolution@0.6.0`、`dsh-codex-auth@0.3.0` 和 `dsh-better-sidebar@0.15.1` 的固定快照；Harbor 插件包含 `evolve-agent-with-harbor` Skill |
 | 评测运行时 | 便携式 CPython 3.12、仓库内固定的 `harbor-dsh-evolution==0.6.0` 源码快照与 Harbor |
 | 产品数据 | 独立的 `DSH_HOME` 和默认 XiaoHui 工作区 |
 
-运行 Harbor Job 仍然需要本机安装并启动 Docker。DeepSeek API 凭据在工作台内配置，不会提交到本仓库。
+首次启动不会访问 npm 或 Node 镜像：XiaoHui 会校验并展开安装包内的 Node/pnpm 与依赖 Store 归档，再执行冻结的离线安装。运行 Harbor Job 仍然需要本机安装并启动 Docker。Codex Auth 需要官方 `codex` CLI 及其本地 ChatGPT 登录态；插件只在 Host 侧读取 CLI 管理的登录状态，不会把 Token 复制进浏览器设置。DeepSeek API 凭据在工作台内配置，不会提交到本仓库。Codex Auth 与 Better Sidebar 快照都包含面向 Harness `0.1.1-rc.1` 且已记录的 Peer Metadata 兼容修正；插件执行代码与已发布 Tarball 保持一致。
 
 <a id="run"></a>
 
@@ -59,6 +59,6 @@ XIAOHUI_HARBOR_PYTHON_SOURCE=/absolute/path/to/harbor-self-evolving/packages/har
 
 ## 发布
 
-推送 `xiaohui-v*` Tag 会触发 macOS arm64 流水线，并把 DMG 与签名的 Tauri 更新产物发布到 [GitHub Releases](https://github.com/istarwyh/xiaohui-harness/releases)。macOS 应用签名与公证仍需 Apple Developer 凭据；未配置时，用户可能需要在 Gatekeeper 中手动批准应用。
+推送格式严格为 `xiaohui-vX.Y.Z` 的 Tag 会触发 macOS arm64 流水线。流水线会拒绝版本漂移，构建带 XiaoHui 品牌的客户端，并把 DMG 与带签名的 Tauri 更新产物发布到 [GitHub Releases](https://github.com/istarwyh/xiaohui-harness/releases)。更新签名用于保护更新真实性，但不等同于 Apple Developer 签名。macOS 应用签名与公证暂缓处理；用户可能需要在“隐私与安全性”中选择“仍要打开”。
 
-DeepSeek 与 Sakana 的原始代码继续保留其 MIT 许可证和版权。内置 Harbor 集成的 MIT 许可证位于 `apps/desktop-tauri/product/harbor-evolution/`。
+DeepSeek 与 Sakana 的原始代码继续保留其 MIT 许可证和版权。内置的 Harbor 集成、Codex Auth 和 Better Sidebar 在 `apps/desktop-tauri/product/` 下保留各自的上游 MIT 许可证；两个社区快照旁也提交了准确的 npm 来源地址和完整性 Hash。

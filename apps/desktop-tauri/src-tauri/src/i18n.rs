@@ -169,10 +169,10 @@ fn zh(msg: Msg) -> &'static str {
         Msg::StatusScanToolchain => "正在扫描本机 Node / pnpm…",
         Msg::StatusExtractHarness => "正在释放 harness 源码…",
         Msg::StatusReusedNode => "已复用本机 Node，跳过下载",
-        Msg::StatusDownloadNode => "正在从镜像下载 Node {0}…",
+        Msg::StatusDownloadNode => "正在准备内置 Node {0} 运行时…",
         Msg::StatusReusedPnpm => "已复用本机 pnpm",
-        Msg::StatusInstallPnpm => "正在安装 pnpm {0}…",
-        Msg::StatusInstallDeps => "正在从镜像安装依赖 (pnpm install --prod --no-frozen-lockfile)…",
+        Msg::StatusInstallPnpm => "正在准备内置 pnpm {0}…",
+        Msg::StatusInstallDeps => "正在从内置离线 Store 安装冻结的生产依赖…",
         Msg::StatusProductRuntime => "正在加载 XiaoHui 的 Harbor 插件与 Skill…",
         Msg::StatusCheckProfile => "正在检查 profile 依赖…",
         Msg::StatusStartWeb => "正在启动 Web 界面…",
@@ -186,8 +186,8 @@ fn zh(msg: Msg) -> &'static str {
         Msg::StatusHomeRestored => "已恢复 {0} 项历史数据到 {1}",
         Msg::StatusScanMatchedBoth => "已匹配本机 Node {0}，跳过运行时下载",
         Msg::StatusScanMatchedNode => "已匹配本机 Node {0}，将仅安装 pnpm",
-        Msg::StatusScanMissingNode => "未找到兼容 Node，将下载运行时并复用本机 pnpm",
-        Msg::StatusScanMissingBoth => "未找到兼容 Node / pnpm，将从镜像下载",
+        Msg::StatusScanMissingNode => "未找到兼容 Node，将启用内置运行时并复用本机 pnpm",
+        Msg::StatusScanMissingBoth => "未找到兼容 Node / pnpm，将启用安装包内置工具链",
         Msg::WslMissing => "未检测到 WSL。请安装 WSL2 后再将运行环境设为 WSL。",
         Msg::Wsl1Only => "当前发行版是 WSL1。请执行 wsl --set-version <发行版> 2。",
         Msg::WslDockerDefault => {
@@ -255,11 +255,11 @@ fn en(msg: Msg) -> &'static str {
         Msg::StatusScanToolchain => "Scanning this machine for Node / pnpm…",
         Msg::StatusExtractHarness => "Unpacking harness source…",
         Msg::StatusReusedNode => "Reusing this machine's Node; skip download",
-        Msg::StatusDownloadNode => "Downloading Node {0} from the mirror…",
+        Msg::StatusDownloadNode => "Preparing the bundled Node {0} runtime…",
         Msg::StatusReusedPnpm => "Reusing this machine's pnpm",
-        Msg::StatusInstallPnpm => "Installing pnpm {0}…",
+        Msg::StatusInstallPnpm => "Preparing bundled pnpm {0}…",
         Msg::StatusInstallDeps => {
-            "Installing dependencies from the mirror (pnpm install --prod --no-frozen-lockfile)…"
+            "Installing frozen production dependencies from the bundled offline store…"
         }
         Msg::StatusProductRuntime => "Loading XiaoHui's Harbor plugin and Skill…",
         Msg::StatusCheckProfile => "Checking profile dependencies…",
@@ -275,9 +275,11 @@ fn en(msg: Msg) -> &'static str {
         Msg::StatusScanMatchedBoth => "Matched this machine's Node {0}; skip runtime download",
         Msg::StatusScanMatchedNode => "Matched this machine's Node {0}; will install pnpm only",
         Msg::StatusScanMissingNode => {
-            "No compatible Node found; will download the runtime and reuse this machine's pnpm"
+            "No compatible Node found; will use the bundled runtime and reuse this machine's pnpm"
         }
-        Msg::StatusScanMissingBoth => "No compatible Node / pnpm found; will download from the mirror",
+        Msg::StatusScanMissingBoth => {
+            "No compatible Node / pnpm found; will use the toolchain bundled with the installer"
+        }
         Msg::WslMissing => "WSL was not detected. Install WSL2, then set the runtime to WSL.",
         Msg::Wsl1Only => "This distro is WSL1. Run wsl --set-version <distro> 2.",
         Msg::WslDockerDefault => {

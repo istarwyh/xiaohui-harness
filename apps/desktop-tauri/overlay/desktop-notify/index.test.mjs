@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
-import { apply } from './index.mjs'
+import { apply, CONTENT_SECURITY_POLICY } from './index.mjs'
 
 const originalFetch = globalThis.fetch
 const originalUrl = process.env.DSH_DESKTOP_NOTIFY_URL
@@ -24,9 +24,17 @@ function loadPlugin() {
   return listeners
 }
 
-test('does not subscribe when the notify URL is absent', () => {
+test('always injects the desktop security policy', () => {
   delete process.env.DSH_DESKTOP_NOTIFY_URL
-  assert.equal(loadPlugin().length, 0)
+  const listeners = loadPlugin()
+  assert.equal(listeners.length, 1)
+  assert.equal(listeners[0][0], 'webserver/index-inject')
+  const table = []
+  listeners[0][1](table)
+  assert.equal(table.length, 1)
+  assert.match(table[0].html, /Content-Security-Policy/)
+  assert.match(table[0].html, /name="referrer" content="no-referrer"/)
+  assert.match(CONTENT_SECURITY_POLICY, /object-src 'none'/)
 })
 
 test('posts only a completed turn/end to the shell', async () => {
@@ -38,15 +46,15 @@ test('posts only a completed turn/end to the shell', async () => {
   }
 
   const listeners = loadPlugin()
-  assert.equal(listeners.length, 1)
-  assert.equal(listeners[0][0], 'session/event')
+  assert.equal(listeners.length, 2)
+  assert.equal(listeners[1][0], 'session/event')
 
-  listeners[0][1]({ id: 'sess-1' }, { type: 'turn/start' })
-  listeners[0][1](
+  listeners[1][1]({ id: 'sess-1' }, { type: 'turn/start' })
+  listeners[1][1](
     { id: 'sess-1' },
     { type: 'turn/end', data: { reason: { kind: 'aborted' } } },
   )
-  listeners[0][1](
+  listeners[1][1](
     { id: 'sess-1' },
     { type: 'turn/end', data: { reason: { kind: 'completed' } } },
   )

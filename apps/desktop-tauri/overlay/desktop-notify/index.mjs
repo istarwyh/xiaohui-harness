@@ -7,11 +7,34 @@
 
 export const name = 'dsh-desktop-notify'
 
+export const CONTENT_SECURITY_POLICY = [
+  "default-src 'self' data: blob:",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: http: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss: http: https:",
+  "frame-src http: https: data: blob:",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+].join('; ')
+
+const SECURITY_META = [
+  `<meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}">`,
+  '<meta name="referrer" content="no-referrer">',
+].join('')
+
 /**
  * Subscribe to session events and POST completed turns to the native shell.
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
+  ctx.on('webserver/index-inject', (table) => {
+    table.push({ kind: 'html', placement: 'head', html: SECURITY_META })
+  })
+
   const notifyUrl = process.env.DSH_DESKTOP_NOTIFY_URL
   if (!notifyUrl) {
     return

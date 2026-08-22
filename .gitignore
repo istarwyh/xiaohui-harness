@@ -2,8 +2,8 @@ CLAUDE.local.md
 .env
 node_modules/
 lib/
-!apps/desktop-tauri/product/harbor-evolution/lib/
-!apps/desktop-tauri/product/harbor-evolution/lib/**
+!apps/desktop-tauri/product/*/lib/
+!apps/desktop-tauri/product/*/lib/**
 *.tsbuildinfo
 pnpm-debug.log
 .pnpm-store/

@@ -302,6 +302,6 @@ mod tests {
             node: None,
             pnpm: None,
         };
-        assert!(toolchain_status(&missing).contains("将从镜像下载"));
+        assert!(toolchain_status(&missing).contains("安装包内置工具链"));
     }
 }

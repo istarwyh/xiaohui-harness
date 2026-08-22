@@ -20,6 +20,18 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1)
 }
 
+const offlineStoreScript = join(root, 'scripts', 'prepare-harness-offline-store.mjs')
+const offlineStore = spawnSync(process.execPath, [offlineStoreScript], { stdio: 'inherit', cwd: root })
+if (offlineStore.status !== 0) {
+  process.exit(offlineStore.status ?? 1)
+}
+
+const toolchainScript = join(root, 'scripts', 'prepare-managed-toolchain.mjs')
+const toolchain = spawnSync(process.execPath, [toolchainScript], { stdio: 'inherit', cwd: root })
+if (toolchain.status !== 0) {
+  process.exit(toolchain.status ?? 1)
+}
+
 const productRuntimeScript = join(root, 'scripts', 'prepare-xiaohui-runtime.mjs')
 const productRuntime = spawnSync(process.execPath, [productRuntimeScript], { stdio: 'inherit', cwd: root })
 if (productRuntime.status !== 0) {
@@ -31,4 +43,10 @@ if (!existsSync(join(root, 'bundled', 'harness', '.bundle-manifest.json'))) {
 }
 if (!existsSync(join(root, 'bundled', 'xiaohui-runtime', 'manifest.json'))) {
   throw new Error('XiaoHui runtime manifest missing after prepare-xiaohui-runtime.mjs')
+}
+if (!existsSync(join(root, 'bundled', 'harness', 'xiaohui-pnpm-store.tar.gz'))) {
+  throw new Error('offline pnpm store archive missing after prepare-harness-offline-store.mjs')
+}
+if (!existsSync(join(root, 'bundled', 'toolchain', 'manifest.json'))) {
+  throw new Error('managed Node/pnpm toolchain missing after prepare-managed-toolchain.mjs')
 }
