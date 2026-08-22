@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::product::ProductRuntime;
 use crate::runtime::provision::RuntimePaths;
 
 /// Absolute `--patch` file the Host should load.
@@ -47,9 +48,24 @@ fn is_windows_drive_path(path: &str) -> bool {
     )
 }
 
-/// Render the `--patch` YAML row that registers the desktop notify plugin.
-pub fn overlay_yaml(plugin_url: &str) -> String {
-    format!("- insert:\n    - id: dsh-desktop-notify\n      name: '{plugin_url}'\n")
+/// Render the desktop-notification row used by every supported launch mode.
+pub fn notification_overlay_yaml(plugin_url: &str) -> String {
+    let plugin_url = serde_json::to_string(plugin_url).unwrap_or_else(|_| "\"\"".into());
+    format!("- insert:\n    - id: dsh-desktop-notify\n      name: {plugin_url}\n")
+}
+
+/// Render the XiaoHui product and desktop-notification rows loaded after the web profile.
+pub fn overlay_yaml(plugin_url: &str, product: &ProductRuntime) -> String {
+    let project_root = serde_json::to_string(&product.project_root.display().to_string())
+        .unwrap_or_else(|_| "\"\"".into());
+    let harbor_bin = serde_json::to_string(&product.harbor_bin.display().to_string())
+        .unwrap_or_else(|_| "\"\"".into());
+    let harbor_dsh_bin = serde_json::to_string(&product.harbor_dsh_bin.display().to_string())
+        .unwrap_or_else(|_| "\"\"".into());
+    format!(
+        "{}- insert:\n    - id: harbor-evolution\n      name: dsh-harbor-evolution\n      config:\n        projectRoot: {project_root}\n        jobsDir: \"jobs\"\n        harborBin: {harbor_bin}\n        harborDshBin: {harbor_dsh_bin}\n        pythonPath: \"\"\n",
+        notification_overlay_yaml(plugin_url)
+    )
 }
 
 /// Copy the overlay plugin into `dest_dir` and write a `--patch` list.
@@ -57,6 +73,7 @@ pub fn install_overlay_at(
     dest_dir: &Path,
     overlay_src: &Path,
     plugin_name_in_yaml: &str,
+    product: &ProductRuntime,
 ) -> Result<OverlayPatch, String> {
     let plugin_src = overlay_src.join("index.mjs");
     if !plugin_src.is_file() {
@@ -77,7 +94,7 @@ pub fn install_overlay_at(
     })?;
 
     let patch_file = dest_dir.join("cordis.yml");
-    fs::write(&patch_file, overlay_yaml(plugin_name_in_yaml))
+    fs::write(&patch_file, overlay_yaml(plugin_name_in_yaml, product))
         .map_err(|e| format!("无法写入 {}: {e}", patch_file.display()))?;
 
     Ok(OverlayPatch { patch_file })
@@ -88,6 +105,7 @@ pub fn install_overlay(
     paths: &RuntimePaths,
     overlay_src: &Path,
     notify_url: &str,
+    product: &ProductRuntime,
 ) -> Result<OverlayPatch, String> {
     let dest_dir = paths.dsh_home.join("desktop-overlay");
     let plugin_src = overlay_src.join("index.mjs");
@@ -110,7 +128,7 @@ pub fn install_overlay(
 
     let plugin_path = normalize_plugin_path(&plugin_dest)?;
     let _ = notify_url;
-    install_overlay_at(&dest_dir, overlay_src, &plugin_path)
+    install_overlay_at(&dest_dir, overlay_src, &plugin_path, product)
 }
 
 fn normalize_plugin_path(path: &Path) -> Result<String, String> {
@@ -148,8 +166,18 @@ mod tests {
         install_overlay, install_overlay_at, linux_plugin_file_url, normalize_plugin_path,
         overlay_yaml,
     };
+    use crate::product::ProductRuntime;
     use crate::runtime::provision::RuntimePaths;
     use std::fs;
+
+    fn product(root: &std::path::Path) -> ProductRuntime {
+        ProductRuntime {
+            project_root: root.join("workspace"),
+            harbor_bin: root.join("runtime").join("harbor"),
+            harbor_dsh_bin: root.join("runtime").join("harbor-dsh"),
+            integration_version: "0.6.0".into(),
+        }
+    }
 
     #[test]
     fn linux_file_url_is_posix() {
@@ -183,7 +211,9 @@ mod tests {
 
         let dest_dir = root.join("desktop-overlay");
         let plugin_url = "file:///home/u/.dsh/desktop-overlay/index.mjs";
-        let overlay = install_overlay_at(&dest_dir, &root.join("src"), plugin_url).unwrap();
+        let product = product(&root);
+        let overlay =
+            install_overlay_at(&dest_dir, &root.join("src"), plugin_url, &product).unwrap();
         let yaml = fs::read_to_string(&overlay.patch_file).unwrap();
 
         assert!(dest_dir.join("index.mjs").is_file());
@@ -194,9 +224,15 @@ mod tests {
 
     #[test]
     fn overlay_yaml_names_linux_url() {
-        let yaml = overlay_yaml("file:///home/u/.dsh/desktop-overlay/index.mjs");
+        let root = std::path::PathBuf::from("/tmp/xiaohui");
+        let yaml = overlay_yaml(
+            "file:///home/u/.dsh/desktop-overlay/index.mjs",
+            &product(&root),
+        );
         assert!(yaml.contains("file:///home/u/.dsh/desktop-overlay/index.mjs"));
         assert!(!yaml.contains("file:///C:"));
+        assert!(yaml.contains("id: harbor-evolution"));
+        assert!(yaml.contains("name: dsh-harbor-evolution"));
     }
 
     #[test]
@@ -220,8 +256,14 @@ mod tests {
             dsh_home: dsh_home.clone(),
         };
 
-        let overlay =
-            install_overlay(&paths, &root.join("src"), "http://127.0.0.1:9/notify").unwrap();
+        let product = product(&root);
+        let overlay = install_overlay(
+            &paths,
+            &root.join("src"),
+            "http://127.0.0.1:9/notify",
+            &product,
+        )
+        .unwrap();
         let yaml = fs::read_to_string(&overlay.patch_file).unwrap();
         let plugin = dsh_home.join("desktop-overlay").join("index.mjs");
         let plugin_url = normalize_plugin_path(&plugin).unwrap();
@@ -230,7 +272,8 @@ mod tests {
         assert!(plugin_url.contains("%20"), "{plugin_url}");
         assert!(!plugin_url.contains('\\'), "{plugin_url}");
         assert!(yaml.contains("id: dsh-desktop-notify"));
-        assert!(yaml.contains(&format!("name: '{plugin_url}'")), "{yaml}");
+        assert!(yaml.contains("id: harbor-evolution"));
+        assert!(yaml.contains(&format!("name: \"{plugin_url}\"")), "{yaml}");
         let _ = fs::remove_dir_all(&root);
     }
 }

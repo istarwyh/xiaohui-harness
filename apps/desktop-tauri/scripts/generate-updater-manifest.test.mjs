@@ -13,17 +13,13 @@ import {
   writeUpdaterManifest,
 } from './generate-updater-manifest.mjs'
 
-const version = '0.1.1-rc.1-0.1'
-const repository = 'deepseek-ai/deepseek-harness'
-const releaseTag = `desktop-v${version}`
+const version = '0.1.0'
+const repository = 'istarwyh/xiaohui-harness'
+const releaseTag = `xiaohui-v${version}`
 const pubDate = '2026-08-14T00:00:00.000Z'
 
 const expectedAssets = {
-  'windows-x86_64': `deepseek-harness-${version}-windows-x64-setup.exe`,
-  'windows-i686': `deepseek-harness-${version}-windows-x86-setup.exe`,
-  'darwin-x86_64': `deepseek-harness-${version}-macos-x64.app.tar.gz`,
-  'darwin-aarch64': `deepseek-harness-${version}-macos-arm64.app.tar.gz`,
-  'linux-x86_64': `deepseek-harness-${version}-linux-x64.AppImage`,
+  'darwin-aarch64': `xiaohui-harness-${version}-macos-arm64.app.tar.gz`,
 }
 
 async function withTempDir(run) {
@@ -92,7 +88,7 @@ test('createManifest rejects invalid versions and publication dates', () => {
 test('writeUpdaterManifest rejects a missing normalized asset or signature', async () => {
   await withTempDir(async (directory) => {
     await writeAssets(directory)
-    await rm(join(directory, `${expectedAssets['linux-x86_64']}.sig`))
+    await rm(join(directory, `${expectedAssets['darwin-aarch64']}.sig`))
 
     await assert.rejects(
       writeUpdaterManifest({
@@ -104,7 +100,7 @@ test('writeUpdaterManifest rejects a missing normalized asset or signature', asy
         notes: '',
         pubDate,
       }),
-      /missing release file.*linux-x64\.AppImage\.sig/i,
+      /missing release file.*macos-arm64\.app\.tar\.gz\.sig/i,
     )
   })
 })

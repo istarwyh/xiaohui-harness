@@ -13,6 +13,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = join(desktopRoot, '..', '..')
 const outRoot = join(desktopRoot, 'bundled', 'harness')
+const productPluginRoot = join(desktopRoot, 'product', 'harbor-evolution')
+const productPluginName = 'dsh-harbor-evolution'
+const productPluginDestination = join('packages', 'product', 'harbor-evolution')
 
 const skipDirNames = new Set([
   'node_modules', '.git', '.turbo', 'coverage', 'release', '.stage', '.cache',
@@ -130,8 +133,34 @@ function hashBundledContent(trimmedWorkspace, bundlePkg) {
     }
   }
 
+  hashSourceWalk(
+    productPluginRoot,
+    productPluginRoot,
+    hasher,
+    productPluginDestination,
+  )
+  hasher.update(productPluginName)
+  hasher.update('workspace:*')
+
   hasher.update(trimmedWorkspace)
   return hasher.digest('hex')
+}
+
+/** Install the XiaoHui product plugin into the trimmed workspace closure. */
+export function installProductPlugin(bundleRoot) {
+  const productManifest = join(productPluginRoot, 'package.json')
+  if (!existsSync(productManifest)) {
+    throw new Error(`XiaoHui product plugin missing: ${productManifest}`)
+  }
+
+  copyTree(productPluginRoot, join(bundleRoot, productPluginDestination))
+  const cliManifestPath = join(bundleRoot, 'apps', 'cli', 'package.json')
+  const cliManifest = JSON.parse(readFileSync(cliManifestPath, 'utf8'))
+  cliManifest.dependencies = {
+    ...cliManifest.dependencies,
+    [productPluginName]: 'workspace:*',
+  }
+  writeFileSync(cliManifestPath, `${JSON.stringify(cliManifest, null, 2)}\n`)
 }
 
 /**
@@ -222,6 +251,7 @@ copyTree(join(repoRoot, 'vendor'), join(outRoot, 'vendor'))
 copyTree(join(repoRoot, 'native', 'landlock-run'), join(outRoot, 'native', 'landlock-run'))
 copyTree(join(repoRoot, 'apps', 'cli'), join(outRoot, 'apps', 'cli'))
 copyTree(join(repoRoot, 'apps', 'web'), join(outRoot, 'apps', 'web'))
+installProductPlugin(outRoot)
 
 const packagesRoot = join(repoRoot, 'packages')
 for (const group of readdirSync(packagesRoot, { withFileTypes: true })) {
@@ -252,6 +282,8 @@ stripDevDependencies(outRoot)
 
 const manifest = {
   harnessVersion: rootPkg.version,
+  product: 'XiaoHui Harness',
+  productPlugin: `${productPluginName}@${JSON.parse(readFileSync(join(productPluginRoot, 'package.json'), 'utf8')).version}`,
   bundledAt: new Date().toISOString(),
   contentSha256: hashBundledContent(trimmedWorkspace, bundlePkg),
   method: 'trimmed-monorepo-source',

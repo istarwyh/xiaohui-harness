@@ -20,7 +20,6 @@ use super::host_env::{
 };
 use super::io_fallback::{is_recoverable_io, recoverable_message};
 use super::process::hide_console;
-use super::user_home::{resolve_user_home, user_home_status};
 use super::{app_data_root, ProvisionEvent};
 use crate::i18n::{self, Msg};
 
@@ -50,7 +49,6 @@ const NODE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// Harness trees kept under `harness-versions`: the active tree, the fallback
 /// for a failed provision, and one spare for an older still-running Host.
 const HARNESS_TREES_KEPT: usize = 3;
-
 
 /// Node distribution archive coordinates for a given OS/arch.
 #[derive(Debug)]
@@ -97,12 +95,10 @@ pub async fn ensure_runtime(
         i18n::t(Msg::StatusMatchingHome).into(),
     ));
     progress(ProvisionEvent::Progress(8));
-    let user_home = resolve_user_home(&isolated_home);
-    let dsh_home = user_home.path.clone();
-    progress(ProvisionEvent::Status(user_home_status(
-        &user_home,
-        &isolated_home,
-    )));
+    let dsh_home = isolated_home;
+    fs::create_dir_all(&dsh_home)
+        .map_err(|e| format!("cannot create XiaoHui home {}: {e}", dsh_home.display()))?;
+    progress(ProvisionEvent::Status(i18n::t(Msg::StatusHomeNone).into()));
 
     if manifest_ready(&manifest_path, &bundled, &harness_root, &cli_entry) {
         boot_log::info("provision skipped: manifest ready");
@@ -319,8 +315,9 @@ fn resolve_local_repo() -> Result<RuntimePaths, String> {
         }
     });
 
-    let isolated_home = app_data_root()?.join("dsh-home");
-    let dsh_home = resolve_user_home(&isolated_home).path;
+    let dsh_home = app_data_root()?.join("dsh-home");
+    fs::create_dir_all(&dsh_home)
+        .map_err(|e| format!("cannot create XiaoHui home {}: {e}", dsh_home.display()))?;
 
     Ok(RuntimePaths {
         node_binary,
@@ -413,7 +410,8 @@ pub fn try_recover_paths(bundled: Option<&Path>) -> Option<RuntimePaths> {
     if !cli_entry.is_file() {
         return None;
     }
-    let dsh_home = resolve_user_home(&isolated_home).path;
+    let dsh_home = isolated_home;
+    fs::create_dir_all(&dsh_home).ok()?;
     Some(RuntimePaths {
         node_binary,
         pnpm_binary,
@@ -446,11 +444,7 @@ fn mtime_of(path: &Path) -> SystemTime {
 /// Order candidate harness trees newest first so recovery prefers the most
 /// recently provisioned tree; equal timestamps fall back to name order.
 fn sort_harness_trees_newest_first(dirs: &mut [PathBuf]) {
-    dirs.sort_by(|a, b| {
-        mtime_of(b)
-            .cmp(&mtime_of(a))
-            .then_with(|| b.cmp(a))
-    });
+    dirs.sort_by(|a, b| mtime_of(b).cmp(&mtime_of(a)).then_with(|| b.cmp(a)));
 }
 
 fn find_existing_harness(app_root: &Path) -> Option<PathBuf> {
@@ -848,9 +842,7 @@ fn wait_status_with_timeout(
     timeout: Duration,
     label: &str,
 ) -> Result<std::process::ExitStatus, String> {
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("{label} 启动失败: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| format!("{label} 启动失败: {e}"))?;
     wait_child_with_timeout(&mut child, timeout, label)
 }
 
@@ -1023,8 +1015,7 @@ fn pnpm_install_harness(
     // fill the OS pipe buffer and block the child before a deadline can fire.
     let stdout_handle = spawn_pipe_reader(child.stdout.take());
     let stderr_handle = spawn_pipe_reader(child.stderr.take());
-    let status =
-        wait_child_with_timeout(&mut child, PNPM_HARNESS_INSTALL_TIMEOUT, "pnpm install")?;
+    let status = wait_child_with_timeout(&mut child, PNPM_HARNESS_INSTALL_TIMEOUT, "pnpm install")?;
     let stdout = stdout_handle.join().unwrap_or_default();
     let stderr = stderr_handle.join().unwrap_or_default();
 
@@ -1038,9 +1029,7 @@ fn pnpm_install_harness(
     Ok(())
 }
 
-fn spawn_pipe_reader<T: Read + Send + 'static>(
-    pipe: Option<T>,
-) -> std::thread::JoinHandle<String> {
+fn spawn_pipe_reader<T: Read + Send + 'static>(pipe: Option<T>) -> std::thread::JoinHandle<String> {
     std::thread::spawn(move || {
         let mut buffer = String::new();
         if let Some(mut pipe) = pipe {
@@ -1053,9 +1042,9 @@ fn spawn_pipe_reader<T: Read + Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::{
-        find_existing_harness, gc_harness_versions, harness_root_for_bundle,
-        harness_tree_bootable, manifest_ready, node_archive_spec_for, node_matches_manifest,
-        safe_archive_relative_path, HARNESS_TREES_KEPT,
+        find_existing_harness, gc_harness_versions, harness_root_for_bundle, harness_tree_bootable,
+        manifest_ready, node_archive_spec_for, node_matches_manifest, safe_archive_relative_path,
+        HARNESS_TREES_KEPT,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -1258,12 +1247,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(manifest_ready(
-            &manifest_path,
-            &bundled,
-            &harness,
-            &cli,
-        ));
+        assert!(manifest_ready(&manifest_path, &bundled, &harness, &cli,));
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1299,12 +1283,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!manifest_ready(
-            &manifest_path,
-            &bundled,
-            &harness,
-            &cli,
-        ));
+        assert!(!manifest_ready(&manifest_path, &bundled, &harness, &cli,));
         let _ = fs::remove_dir_all(&dir);
     }
 }

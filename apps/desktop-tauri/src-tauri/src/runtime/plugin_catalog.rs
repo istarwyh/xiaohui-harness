@@ -47,23 +47,23 @@ pub fn begin_from_tray(app: &AppHandle) {
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        notify::toast(app, "DeepSeek Harness", i18n::t(Msg::CatalogBusy));
+        notify::toast(app, "XiaoHui Harness", i18n::t(Msg::CatalogBusy));
         return;
     }
 
     let Some(runtime) = app.try_state::<DesktopRuntime>() else {
         INSTALLING.store(false, Ordering::SeqCst);
-        notify::toast(app, "DeepSeek Harness", i18n::t(Msg::CatalogNotReady));
+        notify::toast(app, "XiaoHui Harness", i18n::t(Msg::CatalogNotReady));
         return;
     };
     let target = runtime.plugin_target.clone();
-    notify::toast(app, "DeepSeek Harness", i18n::t(Msg::CatalogInstalling));
+    notify::toast(app, "XiaoHui Harness", i18n::t(Msg::CatalogInstalling));
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = tokio::task::spawn_blocking(move || install_catalog(&target)).await;
         match result {
             Ok(Ok(())) => {
-                notify::toast(&app, "DeepSeek Harness", i18n::t(Msg::CatalogRestarting));
+                notify::toast(&app, "XiaoHui Harness", i18n::t(Msg::CatalogRestarting));
                 chrome::request_restart(&app);
             }
             Ok(Err(error)) => {

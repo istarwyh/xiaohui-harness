@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::i18n::{self, Msg};
-use crate::overlay::{linux_plugin_file_url, overlay_yaml};
+use crate::overlay::{linux_plugin_file_url, notification_overlay_yaml};
 use crate::runtime::config::{npm_registry, DEFAULT_NODE_VERSION, DEFAULT_PNPM_VERSION};
 use crate::runtime::host_env::node_version_compatible;
 use crate::runtime::provision::{download_file, node_archive_spec_for};
@@ -373,7 +373,7 @@ fn implant_overlay(
     let plugin_dest = format!("{dest_dir}/index.mjs");
     let patch_dest = format!("{dest_dir}/cordis.yml");
     let plugin_url = linux_plugin_file_url(&plugin_dest)?;
-    let yaml = overlay_yaml(&plugin_url);
+    let yaml = notification_overlay_yaml(&plugin_url);
 
     let mkdir = wsl_exec(runner, distro, &["mkdir", "-p", &dest_dir]).map_err(|e| e.to_string())?;
     require_success(&mkdir, i18n::t(Msg::WslErrOverlay))?;
@@ -503,6 +503,7 @@ mod tests {
         dir
     }
 
+    #[cfg(windows)]
     #[test]
     fn copies_credentials_once_and_skips_sessions() {
         let bundled = temp_dir("bundled");

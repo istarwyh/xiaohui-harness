@@ -1,19 +1,21 @@
 {
-  "name": "@deepseek-ai/dsh-desktop",
-  "productName": "DeepSeek Harness",
-  "description": "Tauri desktop shell: bundled harness source + mirror-fetched Node/pnpm deps",
-  "version": "0.1.1-rc.1-0.1",
+  "name": "xiaohui-harness-desktop",
+  "productName": "XiaoHui Harness",
+  "description": "A macOS AI workbench with DeepSeek Harness, Harbor Evolution, and its bundled Skill",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "bundle:source": "node scripts/bundle-harness-source.mjs",
+    "sync:product-plugin": "node scripts/sync-product-plugin.mjs",
     "prepare:dist": "node scripts/prepare-dist.mjs",
     "dev": "tauri dev",
     "dev:local": "cross-env DSH_DESKTOP_LAUNCH=local tauri dev",
     "test:update-manifest": "node --test scripts/generate-updater-manifest.test.mjs",
     "test:bundle": "node --test scripts/bundle-harness-source.test.mjs",
     "test:overlay": "node --test overlay/desktop-notify/index.test.mjs",
-    "build": "tauri build",
+    "build": "tauri build --target aarch64-apple-darwin --bundles app && tauri bundle --target aarch64-apple-darwin --bundles dmg --ci && tauri bundle --target aarch64-apple-darwin --bundles app --ci",
+    "prepare:product-runtime": "node scripts/prepare-xiaohui-runtime.mjs",
     "build:win": "tauri build --bundles nsis"
   },
   "devDependencies": {

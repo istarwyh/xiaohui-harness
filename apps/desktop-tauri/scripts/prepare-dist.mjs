@@ -20,6 +20,15 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1)
 }
 
+const productRuntimeScript = join(root, 'scripts', 'prepare-xiaohui-runtime.mjs')
+const productRuntime = spawnSync(process.execPath, [productRuntimeScript], { stdio: 'inherit', cwd: root })
+if (productRuntime.status !== 0) {
+  process.exit(productRuntime.status ?? 1)
+}
+
 if (!existsSync(join(root, 'bundled', 'harness', '.bundle-manifest.json'))) {
   throw new Error('bundled harness manifest missing after bundle-harness-source.mjs')
+}
+if (!existsSync(join(root, 'bundled', 'xiaohui-runtime', 'manifest.json'))) {
+  throw new Error('XiaoHui runtime manifest missing after prepare-xiaohui-runtime.mjs')
 }

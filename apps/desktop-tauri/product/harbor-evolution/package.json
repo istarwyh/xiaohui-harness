@@ -1,0 +1,85 @@
+{
+  "name": "dsh-harbor-evolution",
+  "version": "0.6.0",
+  "description": "DeepSeek Harness plugin and bundled Skill for safely evolving Cordis Candidates with Harbor.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-harbor": "bin/dsh-harbor.mjs"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "bin/",
+    "skills/",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "prepack": "npm run build",
+    "test": "node --test",
+    "check": "npm run build && node --check index.js && node --check bin/dsh-harbor.mjs && node --test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-tool",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-skill": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-skill": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
+    "@deepseek-ai/schemastery": "3.18.1",
+    "esbuild": "0.28.2",
+    "react": "18.3.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "harbor",
+    "agent-evaluation",
+    "agent-evolution",
+    "cordis"
+  ],
+  "homepage": "https://github.com/istarwyh/harbor-self-evolving#readme",
+  "bugs": {
+    "url": "https://github.com/istarwyh/harbor-self-evolving/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/istarwyh/harbor-self-evolving.git",
+    "directory": "packages/dsh-plugin"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

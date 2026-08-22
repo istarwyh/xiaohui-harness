@@ -121,7 +121,7 @@ pub fn boot_kind(settings: &DesktopSettings) -> AgentEnvironment {
 
 pub fn app_data_root() -> Result<PathBuf, String> {
     dirs::data_dir()
-        .map(|d| d.join("DeepSeek Harness"))
+        .map(|d| d.join("XiaoHui Harness"))
         .ok_or_else(|| "cannot resolve application data directory".into())
 }
 

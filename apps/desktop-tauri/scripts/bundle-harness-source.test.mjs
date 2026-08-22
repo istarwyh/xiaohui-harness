@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildTrimmedWorkspaceYaml } from './bundle-harness-source.mjs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { buildTrimmedWorkspaceYaml, installProductPlugin } from './bundle-harness-source.mjs'
 
 test('buildTrimmedWorkspaceYaml keeps upstream patch and build declarations verbatim', () => {
   const source = `packages:
@@ -56,4 +60,22 @@ linkWorkspacePackages: true
 
 test('buildTrimmedWorkspaceYaml rejects a workspace without a packages block', () => {
   assert.throws(() => buildTrimmedWorkspaceYaml('linkWorkspacePackages: true\n'), /packages/)
+})
+
+test('installProductPlugin makes Harbor an in-box CLI dependency', () => {
+  const root = mkdtempSync(join(tmpdir(), 'xiaohui-product-plugin-'))
+  const cli = join(root, 'apps', 'cli')
+  mkdirSync(cli, { recursive: true })
+  writeFileSync(join(cli, 'package.json'), '{"dependencies":{"kept":"1.0.0"}}\n')
+
+  try {
+    installProductPlugin(root)
+    const manifest = JSON.parse(readFileSync(join(cli, 'package.json'), 'utf8'))
+    assert.equal(manifest.dependencies.kept, '1.0.0')
+    assert.equal(manifest.dependencies['dsh-harbor-evolution'], 'workspace:*')
+    assert.ok(readFileSync(join(root, 'packages', 'product', 'harbor-evolution', 'skills', 'evolve-agent-with-harbor', 'SKILL.md'), 'utf8').length > 0)
+  }
+  finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

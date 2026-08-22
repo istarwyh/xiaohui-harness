@@ -627,10 +627,19 @@ mod tests {
 
     #[test]
     fn prepends_missing_dirs_without_duplicating_existing_path() {
+        #[cfg(windows)]
         let first = PathBuf::from("C:\\DeepSeek Harness\\bin");
+        #[cfg(windows)]
         let second = PathBuf::from("C:\\DeepSeek Harness\\runtime\\node");
-        let existing =
-            std::env::join_paths([&second, &PathBuf::from("C:\\Windows\\System32")]).unwrap();
+        #[cfg(windows)]
+        let system = PathBuf::from("C:\\Windows\\System32");
+        #[cfg(not(windows))]
+        let first = PathBuf::from("/opt/xiaohui/bin");
+        #[cfg(not(windows))]
+        let second = PathBuf::from("/opt/xiaohui/runtime/node");
+        #[cfg(not(windows))]
+        let system = PathBuf::from("/usr/bin");
+        let existing = std::env::join_paths([&second, &system]).unwrap();
         let merged = merge_path(Some(existing), &[first.clone(), second.clone()]);
         let parts: Vec<PathBuf> = std::env::split_paths(&merged).collect();
         assert_eq!(parts[0], first);
@@ -730,7 +739,10 @@ mod tests {
     #[test]
     fn detects_a_tool_only_when_the_file_exists() {
         let root = temp_root();
+        #[cfg(windows)]
         fs::write(root.join("git.exe"), "").unwrap();
+        #[cfg(not(windows))]
+        fs::write(root.join("git"), "").unwrap();
         assert!(tool_exists_in(&root, "git"));
         assert!(!tool_exists_in(&root, "bash"));
         let _ = fs::remove_dir_all(&root);
