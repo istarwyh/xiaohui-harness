@@ -101,10 +101,11 @@ jobs:
               || 'dsh-ubuntu-24-04-16core') }}
     name: node 24 / coverage
     env:
-      # Product forks use standard four-core hosted runners, so keep both the
-      # partition count and worker budget bounded there.
+      # Product forks use standard four-core hosted runners. Keep one
+      # instrumented Vitest process there: multiple coverage processes can
+      # starve the real-shell fixtures even when each process has one worker.
       DSH_COVERAGE_MAX_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '2' }}
-      DSH_COVERAGE_PARTITIONS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '4' || '2' }}
+      DSH_COVERAGE_PARTITIONS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '4' || '' }}
       DSH_GATE_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '3' || '1' }}
     steps:
       - uses: actions/checkout@v6
@@ -169,12 +170,13 @@ jobs:
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
       DSH_OXLINT_THREADS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '2' }}
       DSH_PUBLINT_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '2' }}
-      DSH_WEB_SNAPSHOT_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '2' }}
-      # Product forks stay at two snapshot workers; upstream failover halves
-      # concurrency for the shared 64-core VM.
+      DSH_WEB_SNAPSHOT_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '1' }}
+      # Product forks serialize snapshot workers: several scenarios own real
+      # shells or browser timing and are not stable when a four-core hosted
+      # runner is simultaneously building and replaying another scenario.
       DSH_SNAPSHOT_MAX_CONCURRENCY: >-
         ${{ github.repository != 'deepseek-harness/deepseek-harness'
-            && '2'
+            && '1'
             || (vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
                 && github.event.pull_request.user.login != 'dependabot[bot]'
                 && '12'

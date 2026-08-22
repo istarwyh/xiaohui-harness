@@ -445,12 +445,16 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
-    const gated = "${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}"
     const steps = lifecycleJob.steps.filter(isRecord)
+    const checkoutStep = steps.find(s => s.name === 'Check out trusted policy')
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
-    expect(tokenStep).toMatchObject({ if: gated })
-    expect(handleStep).toMatchObject({ if: gated })
+    expect(checkoutStep?.if).toContain("github.repository == 'deepseek-harness/deepseek-harness'")
+    for (const step of [tokenStep, handleStep]) {
+      expect(step?.if).toContain("github.repository == 'deepseek-harness/deepseek-harness'")
+      expect(step?.if).toContain("github.event_name != 'pull_request_review'")
+      expect(step?.if).toContain("github.event.review.state == 'changes_requested'")
+    }
 
     // issue-policy owns PR validation; it is read-only and a real gate.
     const policyPullRequest = workflowEvent(policy, 'pull_request')
