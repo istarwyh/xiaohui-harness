@@ -19,13 +19,13 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const outRoot = join(desktopRoot, 'bundled', 'xiaohui-runtime')
 const manifestPath = join(outRoot, 'manifest.json')
-const pythonVersion = '3.12'
+const pythonVersion = '3.12.14'
 const integrationVersion = '0.6.0'
 const vendoredPythonSource = join(desktopRoot, 'product', 'harbor-python')
 
@@ -57,7 +57,7 @@ function sourceDigest(root) {
 
 function runtimeId(pythonSpec, sourceId) {
   return createHash('sha256')
-    .update(JSON.stringify({ layoutVersion: 1, platform: process.platform, arch: process.arch, pythonVersion, pythonSpec, sourceId }))
+    .update(JSON.stringify({ layoutVersion: 2, platform: process.platform, arch: process.arch, pythonVersion, pythonSpec, sourceId }))
     .digest('hex')
 }
 
@@ -94,9 +94,21 @@ function makePythonLinkRelative(venv, pythonHome) {
   symlinkSync(relative(dirname(link), join(pythonHome, 'bin', 'python3.12')), link)
 }
 
+export function makePythonEntryPointRelocatable(entryPoint, runtimeRoot, pythonHome) {
+  const source = readFileSync(entryPoint, 'utf8')
+  const lines = source.split('\n')
+  if (lines[0] !== '#!/bin/sh' || !lines[1]?.startsWith("'''exec' ")) {
+    throw new Error(`unexpected Python entry point wrapper: ${entryPoint}`)
+  }
+
+  const relativePythonHome = relative(runtimeRoot, pythonHome)
+  lines[1] = `'''exec' env PYTHONHOME="$(dirname -- "$(dirname -- "$(dirname -- "$(realpath -- "$0")")")")/${relativePythonHome}" "$(dirname -- "$(realpath -- "$0")")/python" "$0" "$@"`
+  writeFileSync(entryPoint, lines.join('\n'))
+}
+
 function main() {
   if (process.platform !== 'darwin' || process.arch !== 'arm64') {
-    throw new Error(`XiaoHui Harness 0.1 supports macOS arm64 only; received ${process.platform}-${process.arch}`)
+    throw new Error(`XiaoHui Harness supports macOS arm64 only; received ${process.platform}-${process.arch}`)
   }
 
   const override = process.env.XIAOHUI_HARBOR_PYTHON_SOURCE
@@ -123,6 +135,9 @@ function main() {
   run('uv', ['venv', '--python', join(pythonHome, 'bin', 'python3.12'), '--relocatable', '--seed', venv])
   run('uv', ['pip', 'install', '--python', join(venv, 'bin', 'python'), pythonSpec])
   makePythonLinkRelative(venv, pythonHome)
+  for (const entryPoint of ['harbor', 'harbor-dsh']) {
+    makePythonEntryPointRelocatable(join(venv, 'bin', entryPoint), outRoot, pythonHome)
+  }
   removeAbsolutePythonAlias(pythonInstallRoot)
 
   const manifest = {
@@ -141,4 +156,6 @@ function main() {
   console.log(`prepare-xiaohui-runtime: wrote ${outRoot}`)
 }
 
-main()
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main()
+}

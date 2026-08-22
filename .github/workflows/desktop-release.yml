@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing xiaohui-v* tag to rebuild and publish
         required: true
-        default: xiaohui-v0.2.0
+        default: xiaohui-v0.2.1
 
 permissions:
   contents: write
@@ -48,6 +48,8 @@ jobs:
         run: node apps/desktop-tauri/scripts/verify-release-version.mjs --tag "$RELEASE_TAG"
 
       - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.5'
 
       - name: Install Rust target
         run: rustup target add "$RUST_TARGET"
@@ -76,6 +78,19 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --dir apps/desktop-tauri run build
+
+      - name: Test relocated XiaoHui product runtime
+        run: |
+          bundled="apps/desktop-tauri/src-tauri/target/$RUST_TARGET/release/bundle/macos/XiaoHui Harness.app/Contents/Resources/xiaohui-runtime"
+          relocated="$RUNNER_TEMP/xiaohui-runtime-relocated"
+          ditto "$bundled" "$relocated"
+          cp -L "$relocated/venv/bin/python" "$RUNNER_TEMP/xiaohui-python-bundle-copy"
+          rm "$relocated/venv/bin/python"
+          mv "$RUNNER_TEMP/xiaohui-python-bundle-copy" "$relocated/venv/bin/python"
+          test ! -L "$relocated/venv/bin/python"
+          sed -i '' 's|^home = .*|home = /private/nonexistent/xiaohui-python/bin|' "$relocated/venv/pyvenv.cfg"
+          env -u PYTHONHOME "$relocated/venv/bin/harbor" --version
+          env -u PYTHONHOME "$relocated/venv/bin/harbor-dsh" --help >/dev/null
 
       - name: Test native desktop runtime
         run: cargo test --locked --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml

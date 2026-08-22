@@ -2,7 +2,7 @@
   "name": "xiaohui-harness-desktop",
   "productName": "XiaoHui Harness",
   "description": "A macOS AI workbench with DeepSeek Harness, Harbor Evolution, Codex Auth, Better Sidebar, and bundled Skills",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,7 +16,7 @@
     "test:update-manifest": "node --test scripts/generate-updater-manifest.test.mjs",
     "test:release-version": "node --test scripts/verify-release-version.test.mjs",
     "test:bundle": "node --test scripts/bundle-harness-source.test.mjs",
-    "test:offline": "node --test scripts/prepare-harness-offline-store.test.mjs scripts/prepare-managed-toolchain.test.mjs",
+    "test:offline": "node --test scripts/prepare-harness-offline-store.test.mjs scripts/prepare-managed-toolchain.test.mjs scripts/prepare-xiaohui-runtime.test.mjs",
     "test:overlay": "node --test overlay/desktop-notify/index.test.mjs",
     "verify:release-version": "node scripts/verify-release-version.mjs",
     "build": "tauri build --target aarch64-apple-darwin --bundles app && tauri bundle --target aarch64-apple-darwin --bundles dmg --ci && tauri bundle --target aarch64-apple-darwin --bundles app --ci",
