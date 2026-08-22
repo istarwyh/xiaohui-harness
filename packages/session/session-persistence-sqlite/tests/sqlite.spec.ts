@@ -445,7 +445,19 @@ describe('SessionPersistenceSqlite schema ownership', () => {
         : undefined
     })
 
-    const db = await openDatabase(BusyOnceDatabase, path, 'wal', 100)
+    // Pin the retry clock so a loaded Windows coverage runner cannot spend
+    // the whole logical budget inside one nominal 10ms timer. This test owns
+    // the below-deadline branch; the cutoff test below owns the deadline edge.
+    const clock = vi.spyOn(performance, 'now')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(50)
+      .mockReturnValueOnce(60)
+    let db: DatabaseSync
+    try {
+      db = await openDatabase(BusyOnceDatabase, path, 'wal', 100)
+    } finally {
+      clock.mockRestore()
+    }
     expect(attempts).toBe(2)
     expect(db.prepare(sql('journal-mode-wal')).get()).toEqual({ journal_mode: 'wal' })
     expect(db.prepare(sql('select-trusted-schema')).get()).toEqual({ trusted_schema: 0 })
