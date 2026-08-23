@@ -59,6 +59,12 @@ A direct evaluation requires `candidatePath`, `datasetPath`, `stackPath`, and ex
 
 `harbor_eval_result` defaults to the stable Summary. Use `view=job`, `view=dataset`, `view=progress`, `view=trial` plus a returned `trialId`, or `view=governance` to inspect sanitized instructions, generated output, evidence, and evaluator source without coupling the Agent to artifact file paths.
 
+## Candidate model binding
+
+`harbor_evolution_doctor`, `harbor_context_preview`, and `harbor_eval_run` resolve the Candidate model before Harbor starts. By default they freeze the current Agent provider, model, and reasoning effort; callers may instead provide `candidateProvider` and `candidateModel` together, plus an optional `candidateReasoningEffort`. The selected route is recorded in Evaluation Context v2 and is therefore part of baseline comparability.
+
+During a Job, the Candidate calls the frozen model through a loopback-only Host broker. The Docker task receives a random Job-scoped bearer capability and non-secret model metadata, while reusable provider credentials remain in the Harness Host. The Python adapter checks broker reachability from the task container before Candidate setup and generates an ephemeral `.harbor-runtime` Cordis overlay; it does not modify the snapshotted Candidate. XiaoHui defaults the advertised container hostname to `host.docker.internal`; deployments with a different Host-to-container network must set `modelBrokerAdvertisedHost` explicitly.
+
 ## What setup writes
 
 The selected profile receives one id-targeted override:
@@ -71,6 +77,11 @@ The selected profile receives one id-targeted override:
     harborBin: /managed/runtime/.venv/bin/harbor
     harborDshBin: /managed/runtime/.venv/bin/harbor-dsh
     pythonPath: ""
+    candidateProvider: ""
+    candidateModel: ""
+    candidateReasoningEffort: ""
+    modelBrokerBindHost: 127.0.0.1
+    modelBrokerAdvertisedHost: host.docker.internal
 ```
 
 Keep `pythonPath` empty for the published Python package. `candidatePath`, `datasetPath`, `jobPath`, and `policyPath` are constrained to `projectRoot`.

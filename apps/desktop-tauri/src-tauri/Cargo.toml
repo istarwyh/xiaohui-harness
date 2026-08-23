@@ -1,6 +1,6 @@
 [package]
 name = "xiaohui-harness"
-version = "0.2.1"
+version = "0.2.2"
 description = "XiaoHui Harness desktop AI workbench (Tauri)"
 authors = ["XIAOHUI", "DeepSeek"]
 edition = "2021"

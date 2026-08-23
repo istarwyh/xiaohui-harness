@@ -6,7 +6,7 @@ English | [中文](README.zh.md)
   <img src="apps/desktop-tauri/app-icon.png" width="120" height="120" alt="XiaoHui Harness" />
 </p>
 
-XiaoHui Harness is a macOS AI workbench built from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and the mature [Sakana desktop distribution](https://github.com/Sakana-yuyu/deepseek-harness-desktop). It packages Harbor Evolution and its Skill, [dsh-codex-auth](https://github.com/suntianc/dsh-codex-auth), [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar), and a portable Harbor Python runtime as one application.
+XiaoHui Harness is a macOS AI workbench built from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and the mature [Sakana desktop distribution](https://github.com/Sakana-yuyu/deepseek-harness-desktop). It packages Harbor Evolution and its Skill, [dsh-codex-auth](https://github.com/suntianc/dsh-codex-auth), [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar), a personal-workbench branding plugin, and a portable Harbor Python runtime as one application.
 
 The first release targets Apple Silicon only. The application keeps its sessions, profiles, workspace, and jobs under `~/Library/Application Support/XiaoHui Harness`; it does not read or modify the user's existing `~/.dsh` home.
 
@@ -16,11 +16,11 @@ The first release targets Apple Silicon only. The application keeps its sessions
 |---|---|
 | Desktop shell | Tauri 2 window, tray, notifications, process supervision, startup recovery, and signed updater |
 | Harness | A trimmed, built DeepSeek Harness source tree, frozen product lockfile, compressed offline dependency store, and checksum-pinned macOS arm64 Node/pnpm toolchain |
-| Product plugins | Committed snapshots of `dsh-harbor-evolution@0.6.0`, `dsh-codex-auth@0.3.0`, and `dsh-better-sidebar@0.15.1`; Harbor includes the `evolve-agent-with-harbor` Skill |
+| Product plugins | Committed `dsh-harbor-evolution@0.6.0`, `dsh-codex-auth@0.3.0`, `dsh-better-sidebar@0.15.1`, and `dsh-personal-workbench@0.1.0`; Harbor includes the `evolve-agent-with-harbor` Skill |
 | Evaluation runtime | Portable CPython 3.12 with the committed `harbor-dsh-evolution==0.6.0` source snapshot and Harbor |
 | Product data | An isolated `DSH_HOME` and a default XiaoHui workspace |
 
-First launch does not contact npm or a Node mirror: XiaoHui verifies and expands its bundled Node/pnpm and dependency-store archives, then performs a frozen offline install. Harbor Jobs still require Docker to be installed and running. Codex Auth requires the official `codex` CLI and its local ChatGPT login; it reads the CLI-owned login state on the Host and never copies tokens into browser settings. DeepSeek API credentials are configured inside the workbench and are never committed to this repository. The Codex Auth and Better Sidebar snapshots carry recorded peer-metadata compatibility patches for Harness `0.1.1-rc.1`; their executable code is unchanged from the published tarballs.
+First launch does not contact npm or a Node mirror: XiaoHui verifies and expands its bundled Node/pnpm and dependency-store archives, then performs a frozen offline install. Harbor Jobs still require Docker to be installed and running. Codex Auth requires the official `codex` CLI and its local ChatGPT login; it reads the CLI-owned login state on the Host and never copies tokens into browser settings. Harbor freezes the current Agent model before a Job and lets the isolated Candidate call that same Host model through a Job-scoped broker, so the default GPT Auth path needs no separate DeepSeek credential. The Candidate receives a short-lived broker capability, not the reusable Codex OAuth token. DeepSeek API credentials remain available for explicitly selected DeepSeek models and are configured inside the workbench, never committed to this repository. The Codex Auth and Better Sidebar snapshots carry recorded peer-metadata compatibility patches for Harness `0.1.1-rc.1`; their executable code is unchanged from the published tarballs.
 
 <a id="run"></a>
 
@@ -61,4 +61,4 @@ XIAOHUI_HARBOR_PYTHON_SOURCE=/absolute/path/to/harbor-self-evolving/packages/har
 
 Pushing an exact `xiaohui-vX.Y.Z` tag runs the macOS arm64 workflow. The workflow refuses version drift, builds the branded client, and publishes a DMG plus signed Tauri updater artifacts to [GitHub Releases](https://github.com/istarwyh/xiaohui-harness/releases). The updater signature protects update authenticity, but it is not an Apple Developer signature. macOS application signing and notarization remain deferred; Gatekeeper may require the user to choose **Open Anyway** in Privacy & Security.
 
-The original DeepSeek and Sakana work remains under its MIT license and copyright. The bundled Harbor integration, Codex Auth, and Better Sidebar retain their upstream MIT licenses under `apps/desktop-tauri/product/`; exact npm source URLs and integrity hashes are committed beside the two community snapshots.
+The original DeepSeek and Sakana work remains under its MIT license and copyright. The bundled Harbor integration and Personal Workbench plugin use the MIT license; Codex Auth and Better Sidebar retain their upstream MIT licenses under `apps/desktop-tauri/product/`. Exact npm source URLs and integrity hashes are committed beside the two community snapshots.

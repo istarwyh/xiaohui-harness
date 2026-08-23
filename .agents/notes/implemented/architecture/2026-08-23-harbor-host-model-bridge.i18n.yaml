@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-23-harbor-host-model-bridge.md
+2026-08-23-harbor-host-model-bridge.md: 4c59578f9b06c4a5767735fdf8c12a88027b48ff
+2026-08-23-harbor-host-model-bridge.zh.md: 02790db815f7562fdd127815fff0a37ed3ce2d16

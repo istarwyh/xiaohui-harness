@@ -34,6 +34,11 @@ class EvolutionPlugin(BaseJobPlugin):
         stack_path: str,
         project_root: str,
         mode: str,
+        candidate_model_provider: str,
+        candidate_model: str,
+        candidate_model_transport: str,
+        candidate_model_protocol: str,
+        candidate_reasoning_effort: str | None = None,
         dataset_path: str | None = None,
         policy_path: str | None = None,
     ):
@@ -46,6 +51,17 @@ class EvolutionPlugin(BaseJobPlugin):
         self._project_root = Path(project_root).expanduser().resolve(strict=True)
         self._stack_path = Path(stack_path)
         self._mode = mode
+        self._candidate_model_binding = {
+            "provider": candidate_model_provider,
+            "model": candidate_model,
+            "transport": candidate_model_transport,
+            "protocol": candidate_model_protocol,
+            **(
+                {"reasoning_effort": candidate_reasoning_effort}
+                if candidate_reasoning_effort
+                else {}
+            ),
+        }
         self._policy_path = Path(policy_path) if policy_path else None
         if mode not in {"diagnostic", "promotion-eligible"}:
             raise ValueError("mode must be diagnostic or promotion-eligible")
@@ -94,6 +110,7 @@ class EvolutionPlugin(BaseJobPlugin):
             stack_path=self._stack_path,
             project_root=self._project_root,
             mode=self._mode,
+            candidate_model_binding=self._candidate_model_binding,
         )
         self._job_dir = job.job_dir
         self._job_dir.mkdir(parents=True, exist_ok=True)

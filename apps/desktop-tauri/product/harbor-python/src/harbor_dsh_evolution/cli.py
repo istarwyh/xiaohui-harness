@@ -94,6 +94,11 @@ def _parser() -> argparse.ArgumentParser:
     context_preview_parser.add_argument("--stack", required=True, type=Path)
     context_preview_parser.add_argument("--jobs-dir", required=True, type=Path)
     context_preview_parser.add_argument("--mode", required=True, choices=("diagnostic", "promotion-eligible"))
+    context_preview_parser.add_argument("--candidate-model-provider", required=True)
+    context_preview_parser.add_argument("--candidate-model", required=True)
+    context_preview_parser.add_argument("--candidate-reasoning-effort")
+    context_preview_parser.add_argument("--candidate-model-transport", required=True)
+    context_preview_parser.add_argument("--candidate-model-protocol", required=True)
 
     doctor = commands.add_parser("doctor", help="Validate evaluation architecture")
     doctor.add_argument("--architecture", action="store_true", required=True)
@@ -181,6 +186,17 @@ def main() -> int:
             stack_path=args.stack,
             jobs_dir=args.jobs_dir,
             mode=args.mode,
+            candidate_model_binding={
+                "provider": args.candidate_model_provider,
+                "model": args.candidate_model,
+                "transport": args.candidate_model_transport,
+                "protocol": args.candidate_model_protocol,
+                **(
+                    {"reasoning_effort": args.candidate_reasoning_effort}
+                    if args.candidate_reasoning_effort
+                    else {}
+                ),
+            },
         )
     elif args.command == "doctor":
         result = architecture_doctor(

@@ -91,6 +91,19 @@ function strictInputs(config, args) {
   return { projectRoot, candidate, dataset, stack, jobs, mode, policy }
 }
 
+function candidateModelCliArgs(binding) {
+  if (!binding?.provider || !binding?.model) throw new Error('Candidate model binding is required')
+  return [
+    '--candidate-model-provider', binding.provider,
+    '--candidate-model', binding.model,
+    ...(binding.reasoning_effort === undefined
+      ? []
+      : ['--candidate-reasoning-effort', binding.reasoning_effort]),
+    '--candidate-model-transport', binding.transport,
+    '--candidate-model-protocol', binding.protocol,
+  ]
+}
+
 export async function validateDataset(config, args) {
   const dataset = resolveWithin(config.projectRoot, args.datasetPath, 'datasetPath')
   return cliJson(config, ['dataset', 'validate', dataset, '--project-root', config.projectRoot], { allowedExitCodes: [0, 2] })
@@ -129,11 +142,12 @@ export async function previewContext(config, args) {
     '--stack', inputs.stack,
     '--jobs-dir', inputs.jobs,
     '--mode', inputs.mode,
+    ...candidateModelCliArgs(args.candidateModelBinding),
   ])
   return { manifest, ...preview }
 }
 
-export async function runEvaluation(config, args) {
+export async function runEvaluation(config, args, modelRuntime) {
   const manifest = await snapshot(config, args)
   const inputs = strictInputs(config, args)
   const datasetValidation = await validateDataset(config, args)
@@ -148,6 +162,7 @@ export async function runEvaluation(config, args) {
     'context', 'preview', '--project-root', inputs.projectRoot,
     '--candidate', inputs.candidate, '--dataset', inputs.dataset,
     '--stack', inputs.stack, '--jobs-dir', inputs.jobs, '--mode', inputs.mode,
+    ...candidateModelCliArgs(args.candidateModelBinding),
   ])
   const jobName = args.jobName ?? makeJobName(manifest)
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(jobName)) throw new Error('jobName contains unsupported characters')
@@ -158,6 +173,8 @@ export async function runEvaluation(config, args) {
     '--ak', `candidate_path=${inputs.candidate}`,
     '--ak', `candidate_version=${manifest.version}`,
     '--ak', `candidate_digest=${manifest.digest}`,
+    '--ak', `candidate_model_provider=${args.candidateModelBinding.provider}`,
+    '--ak', `candidate_model=${args.candidateModelBinding.model}`,
     '--job-name', jobName,
     '--jobs-dir', inputs.jobs,
     '--plugin', config.pluginImportPath,
@@ -166,22 +183,47 @@ export async function runEvaluation(config, args) {
     '--plugin-kwarg', `stack_path=${inputs.stack}`,
     '--plugin-kwarg', `project_root=${inputs.projectRoot}`,
     '--plugin-kwarg', `mode=${inputs.mode}`,
+    '--plugin-kwarg', `candidate_model_provider=${args.candidateModelBinding.provider}`,
+    '--plugin-kwarg', `candidate_model=${args.candidateModelBinding.model}`,
+    '--plugin-kwarg', `candidate_model_transport=${args.candidateModelBinding.transport}`,
+    '--plugin-kwarg', `candidate_model_protocol=${args.candidateModelBinding.protocol}`,
   ]
+  if (args.candidateModelBinding.reasoning_effort !== undefined) {
+    harborArgs.push('--ak', `candidate_reasoning_effort=${args.candidateModelBinding.reasoning_effort}`)
+    harborArgs.push('--plugin-kwarg', `candidate_reasoning_effort=${args.candidateModelBinding.reasoning_effort}`)
+  }
   if (inputs.policy) harborArgs.push('--plugin-kwarg', `policy_path=${inputs.policy}`)
-  const processResult = await runProcess(config.harborBin, harborArgs, {
-    cwd: config.projectRoot,
-    timeoutMs: config.timeoutMs,
-    env: { ...process.env, ...(config.pythonPath ? { PYTHONPATH: config.pythonPath } : {}) },
+  const lease = await modelRuntime.openLease(args.candidateModelBinding, {
+    candidateDigest: manifest.digest,
+    jobName,
   })
-  const jobDir = path.join(inputs.jobs, jobName)
-  const summary = JSON.parse(await readFile(path.join(jobDir, 'evaluation-summary.json'), 'utf8'))
-  return {
-    manifest,
-    job: path.relative(inputs.projectRoot, jobDir),
-    summary,
-    doctor,
-    contextPreview: preview,
-    process: { code: processResult.code },
+  try {
+    const processResult = await runProcess(config.harborBin, harborArgs, {
+      cwd: config.projectRoot,
+      timeoutMs: config.timeoutMs,
+      env: {
+        ...process.env,
+        ...(config.pythonPath ? { PYTHONPATH: config.pythonPath } : {}),
+        HSE_MODEL_GATEWAY_URL: lease.endpoint,
+        HSE_MODEL_GATEWAY_TOKEN: lease.token,
+        HSE_MODEL_GATEWAY_PROVIDER: lease.candidateProvider,
+        HSE_MODEL_GATEWAY_INFO: JSON.stringify(lease.modelInfo),
+        HSE_MODEL_GATEWAY_PROTOCOL: lease.protocol,
+      },
+    })
+    const jobDir = path.join(inputs.jobs, jobName)
+    const summary = JSON.parse(await readFile(path.join(jobDir, 'evaluation-summary.json'), 'utf8'))
+    return {
+      manifest,
+      candidateModelBinding: args.candidateModelBinding,
+      job: path.relative(inputs.projectRoot, jobDir),
+      summary,
+      doctor,
+      contextPreview: preview,
+      process: { code: processResult.code },
+    }
+  } finally {
+    await lease.close()
   }
 }
 

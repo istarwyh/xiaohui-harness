@@ -110,6 +110,8 @@ def compute_candidate(candidate_dir: Path) -> tuple[str, list[CandidateFile]]:
 
 
 def _validate_candidate_contract(candidate_dir: Path) -> None:
+    if (candidate_dir / ".harbor-runtime").exists():
+        raise ValueError("Candidate must not contain the reserved .harbor-runtime path")
     missing = [
         name
         for name in ("cordis.yml", "package.json")

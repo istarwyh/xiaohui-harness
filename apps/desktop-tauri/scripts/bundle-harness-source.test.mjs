@@ -97,6 +97,7 @@ test('installProductPlugins makes every XiaoHui plugin an in-box CLI dependency'
     assert.equal(manifest.dependencies['dsh-harbor-evolution'], 'workspace:*')
     assert.equal(manifest.dependencies['dsh-codex-auth'], 'workspace:*')
     assert.equal(manifest.dependencies['dsh-better-sidebar'], 'workspace:*')
+    assert.equal(manifest.dependencies['dsh-personal-workbench'], 'workspace:*')
     assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent'], 'workspace:*')
     assert.ok(readFileSync(join(root, 'packages', 'product', 'harbor-evolution', 'skills', 'evolve-agent-with-harbor', 'SKILL.md'), 'utf8').length > 0)
     assert.equal(
@@ -107,8 +108,13 @@ test('installProductPlugins makes every XiaoHui plugin an in-box CLI dependency'
       JSON.parse(readFileSync(join(root, 'packages', 'product', 'dsh-better-sidebar', 'package.json'), 'utf8')).version,
       '0.15.1',
     )
+    assert.equal(
+      JSON.parse(readFileSync(join(root, 'packages', 'product', 'personal-workbench', 'package.json'), 'utf8')).version,
+      '0.1.0',
+    )
     assert.ok(readFileSync(join(root, 'packages', 'product', 'dsh-codex-auth', 'lib', 'client.js'), 'utf8').length > 0)
     assert.ok(readFileSync(join(root, 'packages', 'product', 'dsh-better-sidebar', 'lib', 'client.js'), 'utf8').length > 0)
+    assert.ok(readFileSync(join(root, 'packages', 'product', 'personal-workbench', 'lib', 'client.js'), 'utf8').length > 0)
   }
   finally {
     rmSync(root, { recursive: true, force: true })

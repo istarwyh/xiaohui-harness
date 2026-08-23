@@ -59,6 +59,12 @@ Web UI 有意保持只读。启动评测和决定晋级始终属于 Agent + Skil
 
 `harbor_eval_result` 默认返回稳定的 Summary。可以使用 `view=job`、`view=dataset`、`view=progress`、`view=trial` 加返回的 `trialId`，或 `view=governance` 检查经过清理的指令、生成结果、证据与 Evaluator 源码，而不让 Agent 耦合制品文件路径。
 
+## Candidate 模型绑定
+
+`harbor_evolution_doctor`、`harbor_context_preview` 与 `harbor_eval_run` 会在 Harbor 启动前解析 Candidate 模型。默认情况下，它们冻结 Agent 当前选择的 Provider、Model 与 Reasoning Effort；调用方也可以同时提供 `candidateProvider` 与 `candidateModel`，并可选提供 `candidateReasoningEffort`。选定的路由会写入 Evaluation Context v2，因此也属于 Baseline 可比性的一部分。
+
+Job 执行期间，Candidate 通过仅绑定 Loopback 的 Host Broker 调用冻结的模型。Docker 任务只会得到随机的 Job 级 Bearer Capability 与非敏感模型 Metadata，可复用的 Provider 凭据始终留在 Harness Host。Python Adapter 会先从任务容器内检查 Broker 可达性，再生成临时 `.harbor-runtime` Cordis Overlay；它不会修改已经快照化的 Candidate。XiaoHui 默认向容器公布 `host.docker.internal`；采用其他 Host 到容器网络的部署必须显式设置 `modelBrokerAdvertisedHost`。
+
 ## Setup 写入什么
 
 所选 Profile 会收到一个按 id 定位的覆盖项：
@@ -71,6 +77,11 @@ Web UI 有意保持只读。启动评测和决定晋级始终属于 Agent + Skil
     harborBin: /managed/runtime/.venv/bin/harbor
     harborDshBin: /managed/runtime/.venv/bin/harbor-dsh
     pythonPath: ""
+    candidateProvider: ""
+    candidateModel: ""
+    candidateReasoningEffort: ""
+    modelBrokerBindHost: 127.0.0.1
+    modelBrokerAdvertisedHost: host.docker.internal
 ```
 
 发布版 Python 包应保持 `pythonPath` 为空。`candidatePath`、`datasetPath`、`jobPath` 和 `policyPath` 都被限制在 `projectRoot` 内。

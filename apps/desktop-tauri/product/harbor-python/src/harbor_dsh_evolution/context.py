@@ -20,6 +20,21 @@ def _package_version(package: str) -> str:
         return "unknown"
 
 
+def normalize_candidate_model_binding(value: dict[str, Any]) -> dict[str, str]:
+    required = ("provider", "model", "transport", "protocol")
+    if not isinstance(value, dict) or not all(
+        isinstance(value.get(key), str) and value[key].strip() for key in required
+    ):
+        raise ValueError(
+            "Candidate model binding requires provider, model, transport, and protocol"
+        )
+    return {
+        key: value[key].strip()
+        for key in (*required, "reasoning_effort")
+        if isinstance(value.get(key), str) and value[key].strip()
+    }
+
+
 def build_evaluation_context(
     dataset_dir: Path,
     *,
@@ -27,12 +42,14 @@ def build_evaluation_context(
     stack_path: Path,
     project_root: Path,
     mode: str,
+    candidate_model_binding: dict[str, Any],
 ) -> dict[str, Any]:
     if mode not in {"diagnostic", "promotion-eligible"}:
         raise ValueError("mode must be diagnostic or promotion-eligible")
     project_root = project_root.expanduser().resolve(strict=True)
     dataset = load_validated_dataset(dataset_dir, project_root=project_root)
     stack = snapshot_stack(stack_path, project_root=project_root)
+    model_binding = normalize_candidate_model_binding(candidate_model_binding)
     integration_digest, _ = tree_digest(
         Path(__file__).parent,
         namespace="harbor-dsh-integration-runtime-v2",
@@ -65,6 +82,7 @@ def build_evaluation_context(
     comparison_identity = {
         "dataset": dataset_identity,
         "stack_comparison_digest": stack["comparison_digest"],
+        "candidate_model_binding": model_binding,
         "runtime": runtime,
     }
     context = {
@@ -78,6 +96,7 @@ def build_evaluation_context(
                 "candidate": candidate_identity,
                 "dataset": dataset_identity,
                 "stack": stack_identity,
+                "candidate_model_binding": model_binding,
                 "runtime": runtime,
                 "mode": mode,
             },
@@ -87,6 +106,7 @@ def build_evaluation_context(
         "candidate": candidate_identity,
         "dataset": dataset_identity,
         "evaluation_stack": stack_identity,
+        "candidate_model_binding": model_binding,
         "runtime": runtime,
     }
     return context
@@ -100,6 +120,7 @@ def context_preview(
     stack_path: Path,
     jobs_dir: Path,
     mode: str,
+    candidate_model_binding: dict[str, Any],
 ) -> dict[str, Any]:
     expected = build_evaluation_context(
         dataset_dir,
@@ -107,6 +128,7 @@ def context_preview(
         stack_path=stack_path,
         project_root=project_root,
         mode=mode,
+        candidate_model_binding=candidate_model_binding,
     )
     compatible: list[dict[str, Any]] = []
     incompatible: list[dict[str, Any]] = []

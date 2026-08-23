@@ -63,7 +63,7 @@ pub fn overlay_yaml(plugin_url: &str, product: &ProductRuntime) -> String {
     let harbor_dsh_bin = serde_json::to_string(&product.harbor_dsh_bin.display().to_string())
         .unwrap_or_else(|_| "\"\"".into());
     format!(
-        "{}- id: web\n  config:\n    searchProvider: codex\n\n- insert:\n    - id: llm-codex-auth\n      name: dsh-codex-auth\n    - id: codex-search\n      name: dsh-codex-auth/search\n    - id: codex-image\n      name: dsh-codex-auth/image\n    - id: better-sidebar\n      name: dsh-better-sidebar\n    - id: harbor-evolution\n      name: dsh-harbor-evolution\n      config:\n        projectRoot: {project_root}\n        jobsDir: \"jobs\"\n        harborBin: {harbor_bin}\n        harborDshBin: {harbor_dsh_bin}\n        pythonPath: \"\"\n",
+        "{}- id: web\n  config:\n    searchProvider: codex\n\n- id: harbor-evolution\n  config:\n    projectRoot: {project_root}\n    jobsDir: \"jobs\"\n    harborBin: {harbor_bin}\n    harborDshBin: {harbor_dsh_bin}\n    pythonPath: \"\"\n\n- insert:\n    - id: xiaohui-llm-codex-auth\n      name: dsh-codex-auth\n      disabled: !!js \"[...ctx.loader.entries()].some((e) => e.options.name === 'dsh-codex-auth' && e.options.id !== 'xiaohui-llm-codex-auth' && !e.disabled)\"\n    - id: xiaohui-codex-search\n      name: dsh-codex-auth/search\n      disabled: !!js \"[...ctx.loader.entries()].some((e) => e.options.name === 'dsh-codex-auth/search' && e.options.id !== 'xiaohui-codex-search' && !e.disabled)\"\n    - id: xiaohui-codex-image\n      name: dsh-codex-auth/image\n      disabled: !!js \"[...ctx.loader.entries()].some((e) => e.options.name === 'dsh-codex-auth/image' && e.options.id !== 'xiaohui-codex-image' && !e.disabled)\"\n    - id: xiaohui-better-sidebar\n      name: dsh-better-sidebar\n      disabled: !!js \"[...ctx.loader.entries()].some((e) => e.options.name === 'dsh-better-sidebar' && e.options.id !== 'xiaohui-better-sidebar' && !e.disabled)\"\n    - id: xiaohui-personal-workbench\n      name: dsh-personal-workbench\n      disabled: !!js \"[...ctx.loader.entries()].some((e) => e.options.name === 'dsh-personal-workbench' && e.options.id !== 'xiaohui-personal-workbench' && !e.disabled)\"\n    - id: xiaohui-harbor-evolution\n      name: dsh-harbor-evolution\n      disabled: !!js \"[...ctx.loader.entries()].some((e) => e.options.name === 'dsh-harbor-evolution' && e.options.id !== 'xiaohui-harbor-evolution' && !e.disabled)\"\n      config:\n        projectRoot: {project_root}\n        jobsDir: \"jobs\"\n        harborBin: {harbor_bin}\n        harborDshBin: {harbor_dsh_bin}\n        pythonPath: \"\"\n",
         notification_overlay_yaml(plugin_url)
     )
 }
@@ -232,13 +232,17 @@ mod tests {
         assert!(yaml.contains("file:///home/u/.dsh/desktop-overlay/index.mjs"));
         assert!(!yaml.contains("file:///C:"));
         assert!(yaml.contains("searchProvider: codex"));
-        assert!(yaml.contains("id: llm-codex-auth"));
+        assert!(yaml.contains("id: xiaohui-llm-codex-auth"));
         assert!(yaml.contains("name: dsh-codex-auth/search"));
         assert!(yaml.contains("name: dsh-codex-auth/image"));
-        assert!(yaml.contains("id: better-sidebar"));
+        assert!(yaml.contains("id: xiaohui-better-sidebar"));
         assert!(yaml.contains("name: dsh-better-sidebar"));
+        assert!(yaml.contains("id: xiaohui-personal-workbench"));
+        assert!(yaml.contains("name: dsh-personal-workbench"));
         assert!(yaml.contains("id: harbor-evolution"));
+        assert!(yaml.contains("id: xiaohui-harbor-evolution"));
         assert!(yaml.contains("name: dsh-harbor-evolution"));
+        assert!(yaml.contains("ctx.loader.entries()"));
     }
 
     #[test]
@@ -278,11 +282,13 @@ mod tests {
         assert!(plugin_url.contains("%20"), "{plugin_url}");
         assert!(!plugin_url.contains('\\'), "{plugin_url}");
         assert!(yaml.contains("id: dsh-desktop-notify"));
-        assert!(yaml.contains("id: llm-codex-auth"));
-        assert!(yaml.contains("id: codex-search"));
-        assert!(yaml.contains("id: codex-image"));
-        assert!(yaml.contains("id: better-sidebar"));
+        assert!(yaml.contains("id: xiaohui-llm-codex-auth"));
+        assert!(yaml.contains("id: xiaohui-codex-search"));
+        assert!(yaml.contains("id: xiaohui-codex-image"));
+        assert!(yaml.contains("id: xiaohui-better-sidebar"));
+        assert!(yaml.contains("id: xiaohui-personal-workbench"));
         assert!(yaml.contains("id: harbor-evolution"));
+        assert!(yaml.contains("id: xiaohui-harbor-evolution"));
         assert!(yaml.contains(&format!("name: \"{plugin_url}\"")), "{yaml}");
         let _ = fs::remove_dir_all(&root);
     }

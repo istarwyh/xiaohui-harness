@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing xiaohui-v* tag to rebuild and publish
         required: true
-        default: xiaohui-v0.2.1
+        default: xiaohui-v0.2.2
 
 permissions:
   contents: write
@@ -64,6 +64,8 @@ jobs:
           pnpm --dir apps/desktop-tauri run test:overlay
           pnpm --dir apps/desktop-tauri run test:update-manifest
           pnpm --dir apps/desktop-tauri run test:release-version
+          node --test apps/desktop-tauri/product/harbor-evolution/test/*.test.js
+          (cd apps/desktop-tauri/product/harbor-python && uv run --group dev pytest tests -q)
 
       - name: Build Harness
         env:
