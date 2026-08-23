@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write apps/desktop-tauri/product/harbor-evolution/README.md
-README.md: 9848cf1ed6cff2abe85a3f0594518b3d5ecdbab4
-README.zh.md: 1a529f66f4f2d46b441fc4e03b4cb17b00849bf8
+README.md: 23bf2416b3e4e4059893a00eb2d8bd51880d3586
+README.zh.md: 1fbafaa1c422159f5d99adb1bc0999d52f467041

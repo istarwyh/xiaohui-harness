@@ -36,10 +36,10 @@ class AcpEntry:
 
 
 def _inside(root: Path, path: Path) -> Path:
-    resolved = path.resolve(strict=True)
+    resolved = path.resolve()
     if resolved != root and root not in resolved.parents:
         raise ValueError(f"Cordis include leaves the Candidate directory: {path}")
-    return resolved
+    return resolved.resolve(strict=True)
 
 
 def _load_entries(path: Path) -> list[dict[str, Any]]:

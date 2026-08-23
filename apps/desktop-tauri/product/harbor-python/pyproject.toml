@@ -1,6 +1,6 @@
 [project]
 name = "harbor-dsh-evolution"
-version = "0.6.0"
+version = "0.7.1"
 description = "Candidate identity, evaluation summaries, and promotion gates for DeepSeek Harness agents evaluated with Harbor."
 readme = "README.md"
 requires-python = ">=3.12"

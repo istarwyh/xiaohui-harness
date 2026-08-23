@@ -18,7 +18,7 @@ from harbor_dsh_evolution.runtime_binding import render_runtime_config
 def _required_environment(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
-        raise ValueError(f"XiaoHui Candidate model bridge requires {name}")
+        raise ValueError(f"DSH Candidate model bridge requires {name}")
     return value
 
 
@@ -51,7 +51,7 @@ class DshCandidateAgent(AcpAgent):
             raise ValueError(
                 "Candidate version mismatch: "
                 f"requested={candidate_version}, manifest={self.manifest.version}"
-            )
+        )
         self.candidate_digest = candidate_digest
         self._model_binding = {
             "provider": str(candidate_model_provider or "").strip(),
@@ -61,7 +61,7 @@ class DshCandidateAgent(AcpAgent):
                 if candidate_reasoning_effort and candidate_reasoning_effort.strip()
                 else {}
             ),
-            "transport": "xiaohui-host-broker",
+            "transport": "dsh-host-broker",
             "protocol": _required_environment("HSE_MODEL_GATEWAY_PROTOCOL"),
         }
         if not self._model_binding["provider"] or not self._model_binding["model"]:
@@ -182,7 +182,7 @@ fi
         )
         if preflight.return_code != 0:
             raise RuntimeError(
-                "Candidate cannot reach the XiaoHui Host model gateway: "
+                "Candidate cannot reach the DSH Host model gateway: "
                 f"{preflight.stderr or preflight.stdout}"
             )
         await environment.exec(

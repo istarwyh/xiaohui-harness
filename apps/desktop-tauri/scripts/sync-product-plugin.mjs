@@ -34,6 +34,7 @@ const entries = [
   'LICENSE',
   'lib',
   'bin',
+  'schemas',
   'skills',
 ]
 

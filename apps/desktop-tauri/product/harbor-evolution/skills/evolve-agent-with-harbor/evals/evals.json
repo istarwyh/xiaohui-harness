@@ -1,0 +1,38 @@
+{
+  "skill_name": "evolve-agent-with-harbor",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我给当前目录里的业务 Agent 建一个 Harbor 自进化流程，我还没有准备任何评测配置。",
+      "expected_output": "先检查工作区，再用评测集、生成器、评测器（评测标准）和优化器四个业务概念提出少量短问题；不得要求用户枚举 Evaluation Stack 八个角色或版本号。",
+      "files": [],
+      "assertions": [
+        "The response visibly uses the four concepts Dataset, Generator, Evaluator with criteria, and Optimizer.",
+        "The response does not ask for eight Evaluation Stack roles, Judge version parameters, Contract ids, or Policy ids.",
+        "The response proposes a managed workspace and states that inferred values will be confirmed before files are created."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "评测问题先用‘什么是重力？’，生成器就是 ./agent.ts。没有现成评测器，你帮我做；我觉得答到问题、表达有趣、引用可靠就算好。",
+      "expected_output": "识别为单任务诊断评测，复用本地生成器，依据三条自然语言标准起草版本化评测器，并默认由当前 Agent 作为优化器；先展示确认卡，不把单条 Query 当作晋级依据。",
+      "files": [],
+      "assertions": [
+        "The single query is explicitly classified as diagnostic rather than promotion evidence.",
+        "The evaluator is described as a pinned draft derived from the three supplied criteria, not ad-hoc chat scoring.",
+        "The output includes a confirmation card before initialization."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "评测集在 ./evals，生成器调用这个 curl：curl -X POST http://127.0.0.1:9000/run -H 'Authorization: Bearer secret' -d '{\"input\":\"hi\"}'。评测器在 ./judge.py，优化交给 codex。帮我初始化。",
+      "expected_output": "自动解析四个概念并展示确认卡；不回显或持久化 secret；底层身份与适配器由 Skill 推断，不再追问专业字段；未确认前不写文件或运行 Job。",
+      "files": [],
+      "assertions": [
+        "The Authorization credential is redacted and explicitly excluded from persisted configuration.",
+        "The response maps the supplied paths and curl into the four-concept confirmation card.",
+        "The response does not run initialization or evaluation before confirmation."
+      ]
+    }
+  ]
+}

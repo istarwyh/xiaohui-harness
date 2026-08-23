@@ -8,17 +8,20 @@ import {
   readEvaluatorGovernance,
   readJobDetail,
   readJobProgress,
+  readMetaEvaluation,
   readTrialDetail,
   readTrialsPage,
 } from './dashboard.js'
 import {
   compareCandidates,
+  initializeGroundTruth,
   initializeProject,
   inspectEvaluator,
   previewContext,
   readEvaluation,
   runDoctor,
   runEvaluation,
+  runMetaEvaluation,
   snapshot,
   updateEvaluator,
   validateDataset,
@@ -144,5 +147,24 @@ export class EvolutionService {
 
   evaluatorInspect(args) {
     return inspectEvaluator(this.config, args)
+  }
+
+  groundTruthInitialize(args) {
+    return initializeGroundTruth(this.config, args)
+  }
+
+  evaluatorMetaEvaluate(args) {
+    return runMetaEvaluation(this.config, args)
+  }
+
+  async meta(args) {
+    const governance = await readEvaluatorGovernance(this.config, args)
+    const stackPath = await resolveEvaluatorStackPath(this.config, governance, args.stackPath)
+    if (!stackPath) return readMetaEvaluation(this.config)
+    const stackDirectory = path.dirname(path.resolve(this.config.projectRoot, stackPath))
+    const evaluationRoot = path.dirname(stackDirectory)
+    return readMetaEvaluation(this.config, {
+      evaluationRoot: path.relative(this.config.projectRoot, evaluationRoot),
+    })
   }
 }

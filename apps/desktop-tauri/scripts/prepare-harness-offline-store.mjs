@@ -1,6 +1,15 @@
 /** Build the production-only pnpm store shipped inside the Harness resource. */
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -11,6 +20,8 @@ const storeRoot = join(harnessRoot, '.xiaohui-pnpm-store')
 const storeArchiveName = 'xiaohui-pnpm-store.tar.gz'
 const storeArchivePath = join(harnessRoot, storeArchiveName)
 const MIN_PRODUCT_STORE_FILES = 1_000
+const cacheRoot = process.env.XIAOHUI_OFFLINE_STORE_CACHE_DIR?.trim()
+const cacheMetadataName = 'xiaohui-pnpm-store-cache-v1.json'
 
 function runPnpm(args) {
   const npmExecPath = process.env.npm_execpath
@@ -91,6 +102,57 @@ function fileSha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
 }
 
+export function validateOfflineStoreCache(metadata, lockSha256, archiveSha256) {
+  if (metadata?.formatVersion !== 1) throw new Error('unsupported offline Store cache format')
+  if (metadata.lockSha256 !== lockSha256) throw new Error('offline Store cache lockfile digest does not match')
+  if (metadata.archiveSha256 !== archiveSha256) throw new Error('offline Store cache archive digest does not match')
+  if (!Number.isInteger(metadata.files) || metadata.files < MIN_PRODUCT_STORE_FILES) {
+    throw new Error('offline Store cache file count is incomplete')
+  }
+  if (!/^[0-9a-f]{64}$/.test(metadata.storeSha256 ?? '')) {
+    throw new Error('offline Store cache content digest is invalid')
+  }
+  return { files: metadata.files, sha256: metadata.storeSha256 }
+}
+
+function restoreCachedOfflineStore(lockSha256) {
+  if (!cacheRoot) return undefined
+  const archive = join(cacheRoot, storeArchiveName)
+  const metadataPath = join(cacheRoot, cacheMetadataName)
+  if (!existsSync(archive) || !existsSync(metadataPath)) return undefined
+
+  try {
+    const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'))
+    const archiveSha256 = fileSha256(archive)
+    const storeDigest = validateOfflineStoreCache(metadata, lockSha256, archiveSha256)
+    copyFileSync(archive, storeArchivePath)
+    const manifestPath = join(harnessRoot, '.bundle-manifest.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    const finalized = finalizeOfflineManifest(manifest, storeDigest, archiveSha256)
+    writeFileSync(manifestPath, `${JSON.stringify(finalized, null, 2)}\n`)
+    console.log(`prepare-harness-offline-store: restored ${storeDigest.files} files from release cache`)
+    return finalized
+  }
+  catch (error) {
+    console.warn(`prepare-harness-offline-store: ignored invalid release cache: ${error.message}`)
+    return undefined
+  }
+}
+
+function saveOfflineStoreCache(lockSha256, finalized) {
+  if (!cacheRoot) return
+  mkdirSync(cacheRoot, { recursive: true })
+  copyFileSync(storeArchivePath, join(cacheRoot, storeArchiveName))
+  writeFileSync(join(cacheRoot, cacheMetadataName), `${JSON.stringify({
+    formatVersion: 1,
+    lockSha256,
+    files: finalized.offlineStore.files,
+    storeSha256: finalized.offlineStore.sha256,
+    archiveSha256: finalized.offlineStore.archiveSha256,
+  }, null, 2)}\n`)
+  console.log(`prepare-harness-offline-store: saved release cache in ${cacheRoot}`)
+}
+
 export function packageExistingOfflineStore() {
   const manifestPath = join(harnessRoot, '.bundle-manifest.json')
   const digest = hashTree(storeRoot)
@@ -125,6 +187,10 @@ export function prepareHarnessOfflineStore() {
     throw new Error('bundle:source must run before preparing the offline pnpm store')
   }
 
+  const lockSha256 = fileSha256(lockPath)
+  const cached = restoreCachedOfflineStore(lockSha256)
+  if (cached) return cached
+
   runPnpm(['install', '--prod', '--frozen-lockfile', '--lockfile-only', '--ignore-scripts'])
   // Remove state from a previous fetch before creating a fresh standalone
   // store; otherwise pnpm may conclude the virtual store is already current.
@@ -139,7 +205,9 @@ export function prepareHarnessOfflineStore() {
   // packaging this tree would duplicate bytes and preserve platform symlinks.
   rmSync(join(harnessRoot, 'node_modules'), { recursive: true, force: true })
 
-  return packageExistingOfflineStore()
+  const finalized = packageExistingOfflineStore()
+  saveOfflineStoreCache(lockSha256, finalized)
+  return finalized
 }
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href

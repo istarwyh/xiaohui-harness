@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evaluator Meta-Evaluation Report v1",
+  "type": "object",
+  "required": ["schema_version", "protocol", "ground_truth", "evaluator", "coverage", "metrics", "disagreements"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "protocol": { "const": "meta-evaluation-report/v1" },
+    "ground_truth": { "type": "object" },
+    "evaluator": { "type": "object" },
+    "coverage": { "type": "object" },
+    "metrics": {
+      "type": "object",
+      "required": ["esf", "sce", "rcr"],
+      "properties": {
+        "esf": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sce": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rcr": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    },
+    "disagreements": { "type": "array" }
+  }
+}

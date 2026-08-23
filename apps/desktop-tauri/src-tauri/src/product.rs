@@ -107,7 +107,7 @@ mod tests {
         fs::create_dir_all(&runtime).unwrap();
         fs::write(
             runtime.join("manifest.json"),
-            r#"{"platform":"linux","arch":"x64","integrationVersion":"0.6.0","harborBin":"venv/bin/harbor","harborDshBin":"venv/bin/harbor-dsh"}"#,
+            r#"{"platform":"linux","arch":"x64","integrationVersion":"0.7.1","harborBin":"venv/bin/harbor","harborDshBin":"venv/bin/harbor-dsh"}"#,
         )
         .unwrap();
 

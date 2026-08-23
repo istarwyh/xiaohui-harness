@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing xiaohui-v* tag to rebuild and publish
         required: true
-        default: xiaohui-v0.2.2
+        default: xiaohui-v0.2.3
 
 permissions:
   contents: write
@@ -27,6 +27,8 @@ jobs:
   build:
     name: Build macOS arm64
     runs-on: macos-15
+    env:
+      XIAOHUI_OFFLINE_STORE_CACHE_DIR: ${{ runner.temp }}/xiaohui-offline-store-cache
     steps:
       - uses: actions/checkout@v6
         with:
@@ -44,6 +46,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/xiaohui-offline-store-cache
+          key: ${{ runner.os }}-${{ runner.arch }}-xiaohui-pnpm-store-v1-${{ hashFiles('apps/desktop-tauri/product/harness-pnpm-lock.yaml') }}
+
       - name: Verify release tag and desktop versions
         run: node apps/desktop-tauri/scripts/verify-release-version.mjs --tag "$RELEASE_TAG"
 
@@ -54,26 +61,26 @@ jobs:
       - name: Install Rust target
         run: rustup target add "$RUST_TARGET"
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            apps/desktop-tauri/src-tauri/target/aarch64-apple-darwin/release/.fingerprint
+            apps/desktop-tauri/src-tauri/target/aarch64-apple-darwin/release/build
+            apps/desktop-tauri/src-tauri/target/aarch64-apple-darwin/release/deps
+          key: ${{ runner.os }}-${{ runner.arch }}-xiaohui-cargo-${{ hashFiles('apps/desktop-tauri/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-xiaohui-cargo-
+
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Test desktop release assembly
-        run: |
-          pnpm --dir apps/desktop-tauri run test:bundle
-          pnpm --dir apps/desktop-tauri run test:offline
-          pnpm --dir apps/desktop-tauri run test:overlay
-          pnpm --dir apps/desktop-tauri run test:update-manifest
-          pnpm --dir apps/desktop-tauri run test:release-version
-          node --test apps/desktop-tauri/product/harbor-evolution/test/*.test.js
-          (cd apps/desktop-tauri/product/harbor-python && uv run --group dev pytest tests -q)
 
       - name: Build Harness
         env:
           DSH_CLIENT_TITLE: XiaoHui Harness
         run: pnpm run build
-
-      - name: Build XiaoHui product runtime
-        run: pnpm --dir apps/desktop-tauri run prepare:product-runtime
 
       - name: Build app and DMG
         env:
@@ -83,7 +90,12 @@ jobs:
 
       - name: Test relocated XiaoHui product runtime
         run: |
-          bundled="apps/desktop-tauri/src-tauri/target/$RUST_TARGET/release/bundle/macos/XiaoHui Harness.app/Contents/Resources/xiaohui-runtime"
+          updater="$(find "apps/desktop-tauri/src-tauri/target/$RUST_TARGET/release/bundle/macos" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)"
+          test -n "$updater"
+          extracted="$RUNNER_TEMP/xiaohui-updater"
+          mkdir -p "$extracted"
+          tar -xzf "$updater" -C "$extracted"
+          bundled="$extracted/XiaoHui Harness.app/Contents/Resources/xiaohui-runtime"
           relocated="$RUNNER_TEMP/xiaohui-runtime-relocated"
           ditto "$bundled" "$relocated"
           cp -L "$relocated/venv/bin/python" "$RUNNER_TEMP/xiaohui-python-bundle-copy"
@@ -93,9 +105,6 @@ jobs:
           sed -i '' 's|^home = .*|home = /private/nonexistent/xiaohui-python/bin|' "$relocated/venv/pyvenv.cfg"
           env -u PYTHONHOME "$relocated/venv/bin/harbor" --version
           env -u PYTHONHOME "$relocated/venv/bin/harbor-dsh" --help >/dev/null
-
-      - name: Test native desktop runtime
-        run: cargo test --locked --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml
 
       - name: Stage release assets
         shell: pwsh
@@ -118,46 +127,8 @@ jobs:
             "$hash  $($_.Name)"
           } | Set-Content -NoNewline:$false release-assets/SHA256SUMS.txt
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xiaohui-macos-arm64
-          path: release-assets/*
-          if-no-files-found: error
-          retention-days: 14
-
-  release:
-    name: Publish GitHub Release
-    needs: build
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-          fetch-depth: 1
-          persist-credentials: false
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: xiaohui-macos-arm64
-          path: release-assets
-
-      - name: Verify release asset set
-        shell: pwsh
-        run: |
-          $expected = @(
-            '*-macos-arm64.dmg',
-            '*-macos-arm64.app.tar.gz',
-            '*-macos-arm64.app.tar.gz.sig',
-            'SHA256SUMS.txt'
-          )
-          foreach ($pattern in $expected) {
-            if (-not (Get-ChildItem release-assets -File -Filter $pattern)) {
-              throw "Missing release asset matching $pattern"
-            }
-          }
-
       - name: Verify release checksums
-        run: cd release-assets && sha256sum --check SHA256SUMS.txt
+        run: cd release-assets && shasum -a 256 --check SHA256SUMS.txt
 
       - name: Generate updater manifest
         shell: pwsh

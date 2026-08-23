@@ -86,7 +86,12 @@ def evaluate(payload):
         "schema_version": 1,
         "protocol": "evaluation-result/v1",
         "criteria": [
-            {"id": "quality", "score": 0, "reason": "Replace the placeholder evaluator."},
+            {
+                "id": "quality",
+                "score": 0,
+                "reason": "Replace the placeholder evaluator.",
+                "recommendation": "Implement the accepted business Rubric before running a formal Job.",
+            },
         ],
     }
 '''
