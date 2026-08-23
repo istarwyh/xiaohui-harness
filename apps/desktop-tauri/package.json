@@ -1,8 +1,8 @@
 {
   "name": "xiaohui-harness-desktop",
   "productName": "XiaoHui Harness",
-  "description": "A macOS AI workbench with DeepSeek Harness, Harbor Evolution, Codex Auth, Better Sidebar, and bundled Skills",
-  "version": "0.2.1",
+  "description": "A macOS AI workbench with DeepSeek Harness, Harbor Evolution, Codex Auth, Better Sidebar, Personal Workbench branding, and bundled Skills",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "scripts": {

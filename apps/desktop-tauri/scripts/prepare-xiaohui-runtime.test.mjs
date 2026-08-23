@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { makePythonEntryPointRelocatable } from './prepare-xiaohui-runtime.mjs'
+import { makePythonEntryPointRelocatable, sourceDigest } from './prepare-xiaohui-runtime.mjs'
 
 test('Python entry points resolve PYTHONHOME after the runtime moves', {
   skip: process.platform === 'win32',
@@ -53,6 +53,26 @@ test('Python entry points resolve PYTHONHOME after the runtime moves', {
     })
     assert.equal(result.status, 0, result.stderr)
     assert.equal(result.stdout.trim(), realpathSync(join(relocated, pythonHomeRelative)))
+  }
+  finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Python product digest ignores local build and virtual-environment artifacts', () => {
+  const root = mkdtempSync(join(tmpdir(), 'xiaohui-python-source-'))
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true })
+    writeFileSync(join(root, 'src', 'agent.py'), 'value = 1\n')
+    const expected = sourceDigest(root)
+    mkdirSync(join(root, '.venv'), { recursive: true })
+    mkdirSync(join(root, 'dist'), { recursive: true })
+    mkdirSync(join(root, 'src', '__pycache__'), { recursive: true })
+    writeFileSync(join(root, '.venv', 'python'), 'local')
+    writeFileSync(join(root, 'dist', 'package.whl'), 'local')
+    writeFileSync(join(root, 'src', '__pycache__', 'agent.pyc'), 'local')
+    writeFileSync(join(root, 'uv.lock'), 'local')
+    assert.equal(sourceDigest(root), expected)
   }
   finally {
     rmSync(root, { recursive: true, force: true })

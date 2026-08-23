@@ -1,0 +1,67 @@
+{
+  "name": "dsh-personal-workbench",
+  "version": "0.1.0",
+  "description": "A small DeepSeek Harness plugin for naming and branding a personal workbench",
+  "type": "module",
+  "private": true,
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "check": "pnpm run typecheck && pnpm run test && pnpm run build"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.31",
+    "esbuild": "^0.27.4",
+    "react": "^18.3.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-connection": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-locale": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-runtime": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-settings": "0.1.1-rc.1",
+    "@deepseek-ai/schemastery": "3.18.1"
+  }
+}

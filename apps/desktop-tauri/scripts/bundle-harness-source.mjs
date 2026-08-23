@@ -31,6 +31,11 @@ const productPlugins = [
     root: join(desktopRoot, 'product', 'dsh-better-sidebar'),
     destination: join('packages', 'product', 'dsh-better-sidebar'),
   },
+  {
+    name: 'dsh-personal-workbench',
+    root: join(desktopRoot, 'product', 'personal-workbench'),
+    destination: join('packages', 'product', 'personal-workbench'),
+  },
 ]
 
 const skipDirNames = new Set([

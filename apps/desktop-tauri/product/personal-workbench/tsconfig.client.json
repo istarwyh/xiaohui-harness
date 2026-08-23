@@ -1,0 +1,26 @@
+{
+  "extends": "../../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false,
+    "types": ["node"]
+  },
+  "include": [
+    "src/constants.ts",
+    "src/client/**/*.ts",
+    "src/client/**/*.tsx",
+    "tests/**/*.client.spec.ts",
+    "tests/**/*.client.spec.tsx"
+  ],
+  "references": [
+    { "path": "../../../../vendor/cordis" },
+    { "path": "../../../../packages/api/remotes/tsconfig.client.json" },
+    { "path": "../../../../packages/client/connection/tsconfig.client.json" },
+    { "path": "../../../../packages/client/runtime" },
+    { "path": "../../../../packages/client/locale" },
+    { "path": "../../../../packages/client/ui-settings" },
+    { "path": "../../../../packages/client/ui-slots" },
+    { "path": "../../../../packages/client/ui-sidebar" },
+    { "path": "../../../../packages/client/ui-conversation" }
+  ]
+}

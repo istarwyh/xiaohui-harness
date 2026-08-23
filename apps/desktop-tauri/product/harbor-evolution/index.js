@@ -5,11 +5,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadBundledSkill } from './lib/official-skill.js'
+import { CandidateModelRuntime } from './lib/model-runtime.js'
 import { EvolutionService } from './lib/service.js'
 import { installDashboardWeb } from './lib/web.js'
 
 export const name = 'harbor-evolution'
-export const inject = ['tools', 'skills']
+export const inject = ['tools', 'skills', 'llm', 'agentDefaultModel']
 
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
 const checkoutPythonPackage = path.resolve(packageDir, '../harbor-plugin')
@@ -30,6 +31,13 @@ export const Config = Schema.object({
   pluginImportPath: Schema.string().default('dsh-evolution'),
   pythonPath: Schema.string().default(''),
   timeoutMs: Schema.number().default(1800000),
+  candidateProvider: Schema.string().default(''),
+  candidateModel: Schema.string().default(''),
+  candidateReasoningEffort: Schema.string().default(''),
+  modelBrokerBindHost: Schema.string().default('127.0.0.1'),
+  modelBrokerAdvertisedHost: Schema.string().default('host.docker.internal'),
+  modelBrokerMaxRequests: Schema.number().min(1).default(1000),
+  modelBrokerMaxRequestBytes: Schema.number().min(1024).default(33554432),
 })
 
 function jsonTool(definition, execute) {
@@ -57,7 +65,8 @@ export function apply(ctx, config) {
         : ''
     ),
   }
-  const service = new EvolutionService(resolved, { pluginVersion: packageJson.version })
+  const modelRuntime = new CandidateModelRuntime(ctx, resolved)
+  const service = new EvolutionService(resolved, { pluginVersion: packageJson.version }, modelRuntime)
 
   ctx.skills.register(loadBundledSkill())
   installDashboardWeb(ctx, service)
@@ -103,6 +112,9 @@ export function apply(ctx, config) {
       stackPath: { type: 'string', required: true },
       policyPath: { type: 'string' },
       mode: { type: 'string', required: true },
+      candidateProvider: { type: 'string', description: 'Optional Candidate provider; provider and model must be supplied together. Defaults to the current XiaoHui Agent selection.' },
+      candidateModel: { type: 'string' },
+      candidateReasoningEffort: { type: 'string' },
     },
   }, args => service.doctor(args)))
 
@@ -124,6 +136,9 @@ export function apply(ctx, config) {
       datasetPath: { type: 'string', required: true },
       stackPath: { type: 'string', required: true },
       mode: { type: 'string', required: true },
+      candidateProvider: { type: 'string', description: 'Optional Candidate provider; provider and model must be supplied together. Defaults to the current XiaoHui Agent selection.' },
+      candidateModel: { type: 'string' },
+      candidateReasoningEffort: { type: 'string' },
     },
   }, args => service.previewContext(args)))
 
@@ -139,6 +154,9 @@ export function apply(ctx, config) {
       mode: { type: 'string', required: true },
       policyPath: { type: 'string' },
       jobName: { type: 'string' },
+      candidateProvider: { type: 'string', description: 'Optional Candidate provider; provider and model must be supplied together. Defaults to the current XiaoHui Agent selection and is frozen before the Job starts.' },
+      candidateModel: { type: 'string' },
+      candidateReasoningEffort: { type: 'string' },
     },
   }, args => service.run(args)))
 

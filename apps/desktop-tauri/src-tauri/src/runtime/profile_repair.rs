@@ -1,7 +1,8 @@
 //! Reinstall broken or missing profile dependencies before the Host starts.
 
+use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -15,6 +16,16 @@ use crate::i18n::{self, Msg};
 
 /// How long one `dsh plugin --profile <name> install` may run before it is killed.
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
+
+const MANAGED_PRODUCT_LINKS: &[(&str, &str)] = &[
+    ("dsh-harbor-evolution", "packages/product/harbor-evolution"),
+    ("dsh-codex-auth", "packages/product/dsh-codex-auth"),
+    ("dsh-better-sidebar", "packages/product/dsh-better-sidebar"),
+    (
+        "dsh-personal-workbench",
+        "packages/product/personal-workbench",
+    ),
+];
 
 /// The profile `dsh web` boots; a profile whose install cannot be repaired is
 /// a boot error only for this one, other profiles defer to a later `dsh plugin`.
@@ -32,7 +43,13 @@ pub async fn ensure_profile_installs(
     host_path: &str,
     progress: &Arc<dyn Fn(ProvisionEvent) + Send + Sync>,
 ) -> Result<(), String> {
-    let pending = profiles_needing_install(&paths.dsh_home);
+    let mut pending = rebind_managed_product_links(paths)?;
+    for name in profiles_needing_install(&paths.dsh_home) {
+        if !pending.contains(&name) {
+            pending.push(name);
+        }
+    }
+    pending.sort();
     if pending.is_empty() {
         return Ok(());
     }
@@ -64,6 +81,89 @@ pub async fn ensure_profile_installs(
         }
     }
     Ok(())
+}
+
+/// Move only XiaoHui-owned product `link:` dependencies from an older
+/// content-addressed Harness tree to the active one. Registry packages and
+/// links outside this application's `harness-versions` directory remain
+/// user-owned and untouched.
+fn rebind_managed_product_links(paths: &RuntimePaths) -> Result<Vec<String>, String> {
+    let profiles_root = paths.dsh_home.join("profiles");
+    let versions_root = paths
+        .dsh_home
+        .parent()
+        .ok_or_else(|| {
+            format!(
+                "DSH home has no application-data parent: {}",
+                paths.dsh_home.display()
+            )
+        })?
+        .join("harness-versions");
+    let Ok(entries) = fs::read_dir(&profiles_root) else {
+        return Ok(Vec::new());
+    };
+    let mut rebound = Vec::new();
+    for entry in entries.flatten() {
+        let profile = entry.path();
+        if !profile.is_dir() || profile.is_symlink() {
+            continue;
+        }
+        let manifest_path = profile.join("package.json");
+        let Ok(raw) = fs::read_to_string(&manifest_path) else {
+            continue;
+        };
+        let Ok(mut manifest) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let Some(dependencies) = manifest
+            .get_mut("dependencies")
+            .and_then(serde_json::Value::as_object_mut)
+        else {
+            continue;
+        };
+        let mut changed = false;
+        for (package, relative) in MANAGED_PRODUCT_LINKS {
+            let Some(spec) = dependencies.get_mut(*package) else {
+                continue;
+            };
+            let Some(link) = spec.as_str().and_then(|value| value.strip_prefix("link:")) else {
+                continue;
+            };
+            let linked = if Path::new(link).is_absolute() {
+                PathBuf::from(link)
+            } else {
+                profile.join(link)
+            };
+            if !linked.starts_with(&versions_root) || !linked.ends_with(relative) {
+                continue;
+            }
+            let current = paths.harness_root.join(relative);
+            if linked == current {
+                continue;
+            }
+            if !current.join("package.json").is_file() {
+                return Err(format!(
+                    "XiaoHui product dependency is missing from the active Harness tree: {}",
+                    current.display()
+                ));
+            }
+            *spec = serde_json::Value::String(format!("link:{}", current.display()));
+            changed = true;
+        }
+        if !changed {
+            continue;
+        }
+        let content = serde_json::to_string_pretty(&manifest)
+            .map_err(|error| format!("无法序列化 {}: {error}", manifest_path.display()))?;
+        fs::write(&manifest_path, format!("{content}\n"))
+            .map_err(|error| format!("无法更新 {}: {error}", manifest_path.display()))?;
+        let Some(name) = entry.file_name().into_string().ok() else {
+            continue;
+        };
+        boot_log::info(&format!("rebound XiaoHui product links in profile {name}"));
+        rebound.push(name);
+    }
+    Ok(rebound)
 }
 
 /// Run one install and re-verify the profile can resolve its dependencies.
@@ -168,6 +268,8 @@ fn format_output_tail(tail: &Arc<Mutex<Vec<String>>>) -> String {
 #[cfg(test)]
 mod tests {
     use super::super::user_home::profiles_needing_install;
+    use super::rebind_managed_product_links;
+    use crate::runtime::provision::RuntimePaths;
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -231,6 +333,59 @@ mod tests {
     fn empty_home_needs_no_installs() {
         let root = temp_root();
         assert!(profiles_needing_install(&root.join("home")).is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rebinds_only_product_links_owned_by_an_old_xiaohui_tree() {
+        let root = temp_root();
+        let dsh_home = root.join("dsh-home");
+        let profile = dsh_home.join("profiles").join("web");
+        let current = root.join("harness-versions").join("current");
+        let current_plugin = current.join("packages/product/harbor-evolution");
+        let old_plugin = root
+            .join("harness-versions")
+            .join("old")
+            .join("packages/product/harbor-evolution");
+        fs::create_dir_all(&profile).unwrap();
+        fs::create_dir_all(&current_plugin).unwrap();
+        fs::write(
+            current_plugin.join("package.json"),
+            r#"{"name":"dsh-harbor-evolution"}"#,
+        )
+        .unwrap();
+        fs::write(
+            profile.join("package.json"),
+            format!(
+                "{{\"dependencies\":{{\"dsh-harbor-evolution\":\"link:{}\",\"third-party\":\"link:/tmp/third-party\"}}}}",
+                old_plugin.display()
+            ),
+        )
+        .unwrap();
+        let paths = RuntimePaths {
+            node_binary: root.join("node"),
+            pnpm_binary: root.join("pnpm"),
+            cli_entry: current.join("apps/cli/lib/bin.js"),
+            harness_root: current.clone(),
+            runtime_root: root.join("runtime"),
+            dsh_home,
+        };
+
+        assert_eq!(
+            rebind_managed_product_links(&paths).unwrap(),
+            vec!["web".to_string()]
+        );
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(profile.join("package.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            value["dependencies"]["dsh-harbor-evolution"],
+            format!("link:{}", current_plugin.display())
+        );
+        assert_eq!(
+            value["dependencies"]["third-party"],
+            "link:/tmp/third-party"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 }

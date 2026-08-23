@@ -57,6 +57,12 @@ export async function computeCandidate(candidateDir) {
 }
 
 async function validateCandidateContract(root) {
+  try {
+    await stat(path.join(root, '.harbor-runtime'))
+    throw new Error('Candidate must not contain the reserved .harbor-runtime path')
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
   for (const required of ['cordis.yml', 'package.json']) {
     try {
       if (!(await stat(path.join(root, required))).isFile()) throw new Error()

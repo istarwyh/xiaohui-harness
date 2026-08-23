@@ -28,6 +28,8 @@ const manifestPath = join(outRoot, 'manifest.json')
 const pythonVersion = '3.12.14'
 const integrationVersion = '0.6.0'
 const vendoredPythonSource = join(desktopRoot, 'product', 'harbor-python')
+const ignoredSourceDirectories = new Set(['.git', '.pytest_cache', '.venv', '__pycache__', 'dist'])
+const ignoredSourceFiles = new Set(['.DS_Store', 'uv.lock'])
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: 'inherit' })
@@ -37,13 +39,16 @@ function run(command, args) {
   }
 }
 
-function sourceDigest(root) {
+export function sourceDigest(root) {
   const hash = createHash('sha256')
   const visit = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const path = join(directory, entry.name)
-      if (entry.isDirectory()) visit(path)
+      if (entry.isDirectory()) {
+        if (!ignoredSourceDirectories.has(entry.name)) visit(path)
+      }
       else if (entry.isFile()) {
+        if (ignoredSourceFiles.has(entry.name) || entry.name.endsWith('.pyc')) continue
         hash.update(relative(root, path))
         hash.update('\0')
         hash.update(readFileSync(path))

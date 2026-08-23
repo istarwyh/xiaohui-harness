@@ -1,0 +1,18 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "src/constants.ts",
+    "src/index.ts",
+    "src/settings.ts",
+    "tests/settings.spec.ts"
+  ],
+  "references": [
+    { "path": "../../../../vendor/cordis" },
+    { "path": "../../../../vendor/schemastery" },
+    { "path": "../../../../packages/settings/settings" }
+  ]
+}

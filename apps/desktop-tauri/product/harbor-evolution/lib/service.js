@@ -45,9 +45,10 @@ export async function resolveEvaluatorStackPath(config, governance, explicitPath
 
 /** One Host-side boundary shared by Agent tools and the Web dashboard. */
 export class EvolutionService {
-  constructor(config, metadata = {}) {
+  constructor(config, metadata = {}, modelRuntime) {
     this.config = config
     this.metadata = metadata
+    this.modelRuntime = modelRuntime
   }
 
   snapshot(args) {
@@ -58,8 +59,9 @@ export class EvolutionService {
     return initializeProject(this.config, args)
   }
 
-  run(args) {
-    return runEvaluation(this.config, args)
+  async run(args) {
+    const candidateModelBinding = await this.modelRuntime.resolve(args)
+    return runEvaluation(this.config, { ...args, candidateModelBinding }, this.modelRuntime)
   }
 
   result(args) {
@@ -79,16 +81,19 @@ export class EvolutionService {
     return compareCandidates(this.config, args)
   }
 
-  doctor(args) {
-    return runDoctor(this.config, args)
+  async doctor(args) {
+    const candidateModelBinding = await this.modelRuntime.resolve(args)
+    const result = await runDoctor(this.config, args)
+    return { ...result, candidate_model_binding: candidateModelBinding }
   }
 
   validateDataset(args) {
     return validateDataset(this.config, args)
   }
 
-  previewContext(args) {
-    return previewContext(this.config, args)
+  async previewContext(args) {
+    const candidateModelBinding = await this.modelRuntime.resolve(args)
+    return previewContext(this.config, { ...args, candidateModelBinding })
   }
 
   dashboard() {
