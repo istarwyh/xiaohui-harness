@@ -204,17 +204,36 @@ def validate_evaluation_result(result: dict[str, Any], *, criteria: list[dict[st
         raise ValueError("Evaluator result must use evaluation-result/v1")
     expected = {item["id"] for item in criteria}
     received: dict[str, float] = {}
+    details: dict[str, dict[str, Any]] = {}
     for item in result.get("criteria") or []:
         if not isinstance(item, dict) or item.get("id") in received:
             raise ValueError("Evaluator result criteria must have unique ids")
+        identity = str(item.get("id") or "").strip()
+        if not identity:
+            raise ValueError("Evaluator result criteria require non-empty ids")
         score = item.get("score")
         if score not in TERNARY_VALUES:
             raise ValueError("Evaluator criterion scores must be 0, 0.5, or 1")
-        received[str(item.get("id"))] = float(score)
+        reason = str(item.get("reason") or "").strip()
+        recommendation = str(item.get("recommendation") or "").strip()
+        if not reason:
+            raise ValueError(f"Evaluator criterion {identity} requires a non-empty reason")
+        if not recommendation:
+            raise ValueError(f"Evaluator criterion {identity} requires a non-empty recommendation")
+        evidence_refs = item.get("evidence_refs") or []
+        if not isinstance(evidence_refs, list) or not all(isinstance(value, str) for value in evidence_refs):
+            raise ValueError(f"Evaluator criterion {identity} evidence_refs must be strings")
+        received[identity] = float(score)
+        details[identity] = {
+            "score": float(score),
+            "reason": reason,
+            "recommendation": recommendation,
+            "evidence_refs": evidence_refs,
+        }
     if set(received) != expected:
         raise ValueError("Evaluator result criteria do not match the descriptor")
     aggregate = sum(received.values()) / len(received)
-    return {"criteria": received, "reward": round(aggregate, 6)}
+    return {"criteria": received, "details": details, "reward": round(aggregate, 6)}
 
 
 def inspect_evaluator(*, project_root: Path, stack_path: Path, include_source: bool = True) -> dict[str, Any]:

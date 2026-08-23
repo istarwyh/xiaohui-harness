@@ -2,8 +2,8 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 
-export const MODEL_GATEWAY_PROTOCOL = 'xiaohui-model-gateway/v1'
-export const CANDIDATE_GATEWAY_PROVIDER = 'xiaohui-host'
+export const MODEL_GATEWAY_PROTOCOL = 'dsh-host-model-gateway/v1'
+export const CANDIDATE_GATEWAY_PROVIDER = 'dsh-host'
 
 function nonBlank(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
@@ -20,7 +20,9 @@ async function readJsonBody(request, maxBytes) {
   let size = 0
   for await (const chunk of request) {
     size += chunk.length
-    if (size > maxBytes) throw Object.assign(new Error('model gateway request is too large'), { statusCode: 413 })
+    if (size > maxBytes) {
+      throw Object.assign(new Error('model gateway request is too large'), { statusCode: 413 })
+    }
     chunks.push(chunk)
   }
   let value
@@ -55,11 +57,17 @@ async function listen(server, host) {
   server.listen(0, host)
   await once(server, 'listening')
   const address = server.address()
-  if (address === null || typeof address === 'string') throw new Error('model gateway did not bind a TCP port')
+  if (address === null || typeof address === 'string') {
+    throw new Error('model gateway did not bind a TCP port')
+  }
   return address.port
 }
 
-/** Resolve the Candidate model and proxy its remote calls through the Host LLM registry. */
+/**
+ * Freeze the current DSH Agent model per Job, then proxy only that model to an
+ * immutable Candidate. The Candidate receives a short-lived capability, never
+ * the Host provider's credential or route selection.
+ */
 export class CandidateModelRuntime {
   constructor(ctx, config) {
     this.ctx = ctx
@@ -88,7 +96,7 @@ export class CandidateModelRuntime {
       ?? (canInheritReasoning ? inherited.reasoningEffort : undefined)
 
     if (!this.ctx.llm.listProviders().some(item => item.id === provider)) {
-      throw new Error(`Candidate model provider "${provider}" is not registered in XiaoHui Harness`)
+      throw new Error(`Candidate model provider "${provider}" is not registered in DeepSeek Harness`)
     }
     const modelInfo = await this.ctx.llm.resolveModelInfo(provider, model)
     if (provider === 'openai-codex') {
@@ -106,7 +114,7 @@ export class CandidateModelRuntime {
       provider,
       model,
       ...(reasoningEffort === undefined ? {} : { reasoning_effort: String(reasoningEffort) }),
-      transport: 'xiaohui-host-broker',
+      transport: 'dsh-host-broker',
       protocol: MODEL_GATEWAY_PROTOCOL,
       model_info: modelInfo,
     }

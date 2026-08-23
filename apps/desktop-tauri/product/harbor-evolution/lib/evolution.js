@@ -78,6 +78,34 @@ export async function updateEvaluator(config, args) {
   ], { input: args.content })
 }
 
+export async function initializeGroundTruth(config, args) {
+  const output = resolveWithin(config.projectRoot, args.outputPath ?? '.harbor/ground-truth.json', 'outputPath')
+  return cliJson(config, [
+    'ground-truth', 'init',
+    '--project-root', config.projectRoot,
+    '--output', output,
+    '--id', String(args.groundTruthId ?? ''),
+    '--version', String(args.version ?? ''),
+    '--source-kind', String(args.sourceKind ?? ''),
+    '--source-description', String(args.sourceDescription ?? ''),
+    '--provenance', String(args.provenance ?? ''),
+    '--criteria', String(args.criteria ?? ''),
+  ])
+}
+
+export async function runMetaEvaluation(config, args) {
+  const groundTruth = resolveWithin(config.projectRoot, args.groundTruthPath ?? '.harbor/ground-truth.json', 'groundTruthPath')
+  const observations = resolveWithin(config.projectRoot, args.observationsPath, 'observationsPath')
+  const output = resolveWithin(config.projectRoot, args.outputPath ?? '.harbor/meta-evaluation-report.json', 'outputPath')
+  return cliJson(config, [
+    'meta-evaluate',
+    '--project-root', config.projectRoot,
+    '--ground-truth', groundTruth,
+    '--observations', observations,
+    '--output', output,
+  ])
+}
+
 function strictInputs(config, args) {
   const projectRoot = path.resolve(config.projectRoot)
   const candidate = resolveWithin(projectRoot, args.candidatePath, 'candidatePath')

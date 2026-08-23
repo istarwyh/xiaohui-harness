@@ -16,8 +16,8 @@ XiaoHui Harness 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deep
 |---|---|
 | 桌面外壳 | Tauri 2 窗口、托盘、通知、进程监管、启动恢复与签名更新 |
 | Harness | 裁剪并完成构建的 DeepSeek Harness 源码、冻结的产品 Lockfile、压缩的离线依赖 Store，以及经过校验和固定的 macOS arm64 Node/pnpm 工具链 |
-| 产品插件 | 固定的 `dsh-harbor-evolution@0.6.0`、`dsh-codex-auth@0.3.0`、`dsh-better-sidebar@0.15.1` 和 `dsh-personal-workbench@0.1.0`；Harbor 插件包含 `evolve-agent-with-harbor` Skill |
-| 评测运行时 | 便携式 CPython 3.12、仓库内固定的 `harbor-dsh-evolution==0.6.0` 源码快照与 Harbor |
+| 产品插件 | 固定的 `dsh-harbor-evolution@0.7.1`、`dsh-codex-auth@0.3.0`、`dsh-better-sidebar@0.15.1` 和 `dsh-personal-workbench@0.1.0`；Harbor 插件包含 `evolve-agent-with-harbor` Skill |
+| 评测运行时 | 便携式 CPython 3.12、仓库内固定的 `harbor-dsh-evolution==0.7.1` 源码快照与 Harbor |
 | 产品数据 | 独立的 `DSH_HOME` 和默认 XiaoHui 工作区 |
 
 首次启动不会访问 npm 或 Node 镜像：XiaoHui 会校验并展开安装包内的 Node/pnpm 与依赖 Store 归档，再执行冻结的离线安装。运行 Harbor Job 仍然需要本机安装并启动 Docker。Codex Auth 需要官方 `codex` CLI 及其本地 ChatGPT 登录态；插件只在 Host 侧读取 CLI 管理的登录状态，不会把 Token 复制进浏览器设置。Harbor 会在 Job 启动前冻结 Agent 当前选择的模型，并让隔离的 Candidate 通过 Job 级 Broker 调用同一个 Host 模型，因此默认的 GPT Auth 路径不需要额外的 DeepSeek 凭据。Candidate 只会得到短期有效的 Broker Capability，不会得到可复用的 Codex OAuth Token。显式选择 DeepSeek 模型时仍可在工作台内配置 DeepSeek API 凭据，这些凭据不会提交到本仓库。Codex Auth 与 Better Sidebar 快照都包含面向 Harness `0.1.1-rc.1` 且已记录的 Peer Metadata 兼容修正；插件执行代码与已发布 Tarball 保持一致。

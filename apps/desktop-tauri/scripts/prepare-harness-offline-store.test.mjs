@@ -4,7 +4,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { finalizeOfflineManifest, hashTree } from './prepare-harness-offline-store.mjs'
+import {
+  finalizeOfflineManifest,
+  hashTree,
+  validateOfflineStoreCache,
+} from './prepare-harness-offline-store.mjs'
 
 test('hashTree is stable across directory creation order and changes with bytes', () => {
   const left = mkdtempSync(join(tmpdir(), 'xiaohui-store-left-'))
@@ -37,4 +41,23 @@ test('finalizeOfflineManifest binds the generated store to the source digest', (
   assert.equal(first.offlineStore.archiveSha256, archive)
   assert.notEqual(first.contentSha256, source)
   assert.notEqual(first.contentSha256, second.contentSha256)
+})
+
+test('validateOfflineStoreCache rejects stale or corrupted release caches', () => {
+  const lock = 'a'.repeat(64)
+  const archive = 'b'.repeat(64)
+  const metadata = {
+    formatVersion: 1,
+    lockSha256: lock,
+    files: 35_000,
+    storeSha256: 'c'.repeat(64),
+    archiveSha256: archive,
+  }
+  assert.deepEqual(validateOfflineStoreCache(metadata, lock, archive), {
+    files: 35_000,
+    sha256: 'c'.repeat(64),
+  })
+  assert.throws(() => validateOfflineStoreCache(metadata, 'd'.repeat(64), archive), /lockfile digest/)
+  assert.throws(() => validateOfflineStoreCache(metadata, lock, 'e'.repeat(64)), /archive digest/)
+  assert.throws(() => validateOfflineStoreCache({ ...metadata, files: 10 }, lock, archive), /file count/)
 })

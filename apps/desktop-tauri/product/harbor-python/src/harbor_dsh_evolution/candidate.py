@@ -10,7 +10,7 @@ from typing import Any
 
 MANIFEST_NAME = "candidate-manifest.json"
 _DIGEST_PREFIX = b"harbor-dsh-candidate-v1\0"
-_EXCLUDED_DIRS = {".git", "node_modules", "__pycache__"}
+_EXCLUDED_DIRS = {".git", "node_modules", "__pycache__", ".harbor-runtime"}
 _EXCLUDED_FILES = {MANIFEST_NAME, ".DS_Store"}
 _DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 _LOCKFILES = ("package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb")

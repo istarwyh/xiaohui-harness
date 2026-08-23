@@ -4,7 +4,7 @@ import path from 'node:path'
 
 export const MANIFEST_NAME = 'candidate-manifest.json'
 const DIGEST_PREFIX = Buffer.from('harbor-dsh-candidate-v1\0')
-const EXCLUDED_DIRS = new Set(['.git', 'node_modules', '__pycache__'])
+const EXCLUDED_DIRS = new Set(['.git', 'node_modules', '__pycache__', '.harbor-runtime'])
 const EXCLUDED_FILES = new Set([MANIFEST_NAME, '.DS_Store'])
 const LOCKFILES = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb']
 const CREDENTIAL_FILES = new Set([

@@ -10,6 +10,8 @@ from urllib.parse import unquote, urlparse
 
 from jsonschema import Draft202012Validator
 
+from harbor_dsh_evolution.evaluator import validate_evaluation_result
+
 SENSITIVE_KEY = re.compile(
     r"authorization|cookie|token|api[_-]?key|secret|password|request[_-]?headers",
     re.I,
@@ -245,6 +247,24 @@ def _safe_trial_dir(payload: dict[str, Any], job_dir: Path) -> Path | None:
     return candidate
 
 
+def _evaluator_result(payload: dict[str, Any], job_dir: Path) -> dict[str, Any] | None:
+    trial_dir = _safe_trial_dir(payload, job_dir)
+    if trial_dir is None:
+        return None
+    source = trial_dir / "verifier" / "evaluation-result.json"
+    try:
+        resolved = source.resolve(strict=True)
+        verifier_root = (trial_dir / "verifier").resolve(strict=True)
+        if resolved.parent != verifier_root or resolved.is_symlink() or not resolved.is_file():
+            return None
+        if resolved.stat().st_size > 128_000:
+            return None
+        value = json.loads(resolved.read_text())
+        return value if isinstance(value, dict) else None
+    except (FileNotFoundError, json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return None
+
+
 def _renderable_file(path: Path, trial_dir: Path) -> dict[str, Any] | None:
     try:
         resolved = path.resolve(strict=True)
@@ -358,6 +378,19 @@ def trial_assessment(
         invalid_reasons.append("evaluation-not-completed")
     if primary_metric not in rewards:
         invalid_reasons.append(f"primary-metric-missing:{primary_metric}")
+    evaluator_interface = payload.get("evaluator_interface")
+    evaluator_result = payload.get("evaluator_result") if isinstance(payload.get("evaluator_result"), dict) else None
+    if isinstance(evaluator_interface, dict):
+        try:
+            if evaluator_result is None:
+                raise ValueError("evaluation-result.json is missing")
+            validate_evaluation_result(
+                evaluator_result,
+                criteria=list(evaluator_interface.get("criteria") or []),
+            )
+        except ValueError as error:
+            requirements["artifact_schema_valid"] = False
+            invalid_reasons.append(f"evaluator-result-invalid:{error}")
     for requirement in VALIDITY_REQUIREMENTS:
         if not requirements[requirement] and (
             requirement in hard or requirement in {"input_integrity", "agent_completed", "judge_completed"}
@@ -425,6 +458,12 @@ def trial_assessment(
     criterion_rewards = {key: value for key, value in rewards.items() if key != primary_metric}
     if not criterion_rewards:
         criterion_rewards = rewards
+    evaluator_result = evaluator_result or {}
+    evaluator_criteria = {
+        str(item.get("id")): item
+        for item in evaluator_result.get("criteria") or []
+        if isinstance(item, dict) and item.get("id")
+    }
     criteria = [
         {
             "id": key,
@@ -432,9 +471,31 @@ def trial_assessment(
             "score": value,
             "status": "measured",
             "evidence_refs": [item["id"] for item in evidence_provenance],
+            **(
+                {
+                    "reason": str(evaluator_criteria[key].get("reason") or ""),
+                    "recommendation": str(evaluator_criteria[key].get("recommendation") or ""),
+                    "recommendation_source": "evaluator",
+                }
+                if key in evaluator_criteria
+                else {}
+            ),
         }
         for key, value in sorted(criterion_rewards.items())
     ]
+    recommendations = [
+        {
+            "criterion_id": item["id"],
+            "message": item["recommendation"],
+            "source": item["recommendation_source"],
+        }
+        for item in criteria
+        if item.get("recommendation")
+    ]
+    recommendations.extend(
+        item if isinstance(item, dict) else {"message": str(item), "source": "evaluator"}
+        for item in evaluator_result.get("recommendations") or []
+    )
     findings = [
         {
             "code": reason.upper().replace(":", "_"),
@@ -479,7 +540,7 @@ def trial_assessment(
             "requirements": requirements,
             "criteria": criteria,
             "findings": findings,
-            "recommendations": [],
+            "recommendations": recommendations,
             "raw_rewards": rewards,
             "output": output,
             "evidence_provenance": evidence_provenance,
@@ -678,7 +739,12 @@ def write_job_artifacts(
     assessments: list[dict[str, Any]] = []
     assessment_paths: list[Path] = []
     for index, payload in enumerate(payloads):
-        payload = {**payload, "captured_output": _captured_agent_output(payload, job_dir)}
+        payload = {
+            **payload,
+            "captured_output": _captured_agent_output(payload, job_dir),
+            "evaluator_result": _evaluator_result(payload, job_dir),
+            "evaluator_interface": (((stack_manifest or {}).get("components") or {}).get("evaluator") or {}).get("interface"),
+        }
         assessment = trial_assessment(
             payload,
             evaluation_contract=evaluation_contract,

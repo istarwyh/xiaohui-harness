@@ -1,10 +1,25 @@
-# Strict Project Initialization
+# Progressive Project Initialization
 
 Load this reference only when the project is missing the Evaluation Stack structure or the user asks to initialize it.
 
-## Readiness worksheet
+## User-facing concept card
 
-Resolve every value before calling `harbor_evolution_init`:
+Keep onboarding anchored on four visible concepts:
+
+| User concept | Plain-language prompt | Accepted input | Compiled architecture |
+| --- | --- | --- | --- |
+| 评测集 (Dataset) | 测什么？ | One Query, file, instruction directory, or Dataset | Dataset tasks, manifest, population, diagnostic/regression mode |
+| 生成器 (Generator) | 谁来回答？ | curl or local/detected Agent | Candidate snapshot, Integration, Renderer, runtime identity |
+| 评测器（评测标准） (Evaluator) | 怎样算好？ | evaluator curl/path, or natural-language criteria | Evaluator, Rubric, Judge identity, Evaluation Contract |
+| 优化器 (Optimizer) | 谁根据结果改进？ | current Agent, Codex, Claude Code, or local command | Optimizer identity, mutation surface, rollback workflow |
+
+Inspect first and prefill everything reliable. Ask only about missing rows. Use `./harbor-evolution/` as the proposed managed workspace when no project exists, but do not write outside the Plugin's configured `projectRoot`; surface a configuration mismatch before initialization.
+
+Before any write, show the four rows plus inferred workspace, diagnostic/promotion scope, and deferred capabilities. The user may start initialization, modify the card, or open advanced configuration.
+
+## Internal compilation worksheet
+
+The Agent, not the user, compiles the accepted concept card into the strict `harbor_evolution_init` arguments:
 
 | Field | Required meaning |
 | --- | --- |
@@ -13,11 +28,15 @@ Resolve every value before calling `harbor_evolution_init`:
 | `datasetId` / `datasetVersion` | Stable identity of task population and GT boundary |
 | `contractId` / `contractVersion` | Stable metric semantics |
 | `primaryMetric` / `primaryDirection` | Exact reward key and `maximize` or `minimize` |
-| Judge provider/model/version | Reproducible Judge identity, never credentials |
+| Judge provider/model/version | Infer from the accepted Evaluator implementation; never persist credentials |
 | Policy id/version | Stable Gate identity |
-| `minImprovement` | Accepted primary-metric delta |
+| `minImprovement` | Use only an explicitly accepted business delta for promotion; a diagnostic scaffold may use `0` and remain ineligible for promotion |
 
-Also establish diagnostic metrics, min/max thresholds, non-regression metrics, mutation surface, repeat policy, and promotion owner. The initializer creates a minimal Policy; update its explicit placeholders before a formal Gate.
+Derive ids from a stable project slug and start newly generated identities at `1.0.0`. Use `reward` with `maximize` only as a visible draft when the user's criteria describe answer quality. The initializer creates a minimal Policy; do not pass it to a `promotion-eligible` Job until the user accepts real thresholds, non-regression metrics, repeat policy, mutation boundaries, and promotion ownership.
+
+Do not ask the user to name Integration, Renderer, Diagnoser, Runner, or Reporter during ordinary onboarding. Generate their identities and explain them only in advanced configuration or when Doctor finds a boundary problem.
+
+If the Evaluator itself will be optimized, separately establish Ground Truth id/version, source kind (`human`, `programmatic`, `consensus`, `model`, or `external`), provenance, owner, Criteria, case population, and adjudication rule. Do not hide these semantics inside the Agent Dataset identity. Use `harbor_ground_truth_init` only after they are accepted.
 
 ## Generated layout
 
@@ -120,11 +139,12 @@ Use business-accepted thresholds. Do not assume all metrics are `/10`, maximized
 
 Show the user:
 
-1. Resolved Candidate, Dataset, Stack, Policy, and Jobs paths.
-2. Role identities and which ones affect reward comparability.
-3. Metric directions, thresholds, groups, and hard requirements.
-4. Holdout, mutation, side-effect, repeat, and deployment boundaries.
-5. Doctor findings and Context preview.
+1. The accepted four-concept card and resolved paths.
+2. Whether the run is a quick diagnostic or a promotion-eligible regression.
+3. Any remaining choice that materially affects cost, safety, score meaning, or comparability.
+4. Doctor findings and Context preview in plain language.
+
+Put role identities, digests, metric directions, hard requirements, and generated defaults under an advanced/audit section. Do not make the user reconfirm unchanged internal fields.
 
 Start with a baseline. Do not create Candidate v2 until baseline evidence supports one controlled hypothesis.
 

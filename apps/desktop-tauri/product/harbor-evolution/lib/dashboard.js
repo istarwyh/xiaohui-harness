@@ -352,6 +352,50 @@ async function jobTrials(config, job) {
   return { trials, total: Number(lifecycle.dataset_total ?? summary?.n_trials ?? trials.length), lifecycle }
 }
 
+function datasetTaskAliases(task) {
+  const values = [task?.id, task?.path, task?.metadata?.task_name]
+  const aliases = new Set()
+  for (const value of values) {
+    const normalized = String(value ?? '').trim().replace(/^\/+|\/+$/g, '')
+    if (!normalized || normalized === '.') continue
+    aliases.add(normalized)
+    aliases.add(normalized.split('/').at(-1))
+  }
+  return aliases
+}
+
+function taskDisplayName(task) {
+  const direct = task?.query ?? task?.metadata?.query
+  if (typeof direct === 'string' && direct.trim()) return direct.trim()
+  if (typeof task?.instruction === 'string') {
+    const lines = task.instruction.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'))
+    const labeled = lines.find(line => /^(?:query|question|问题|任务)\s*[:：]/i.test(line))
+    const text = (labeled ?? lines[0] ?? '').replace(/^(?:query|question|问题|任务)\s*[:：]\s*/i, '')
+    if (text) return text.length > 120 ? `${text.slice(0, 117)}…` : text
+  }
+  return String(task?.id ?? task?.path ?? '')
+}
+
+async function enrichTrialsWithDataset(config, job, trials) {
+  let preview
+  try { preview = await readDatasetPreview(config, { job }) } catch { return trials }
+  const byAlias = new Map()
+  for (const [datasetOrder, task] of (preview?.tasks ?? []).entries()) {
+    for (const alias of datasetTaskAliases(task)) byAlias.set(alias, { task, datasetOrder })
+  }
+  return trials.map(trial => {
+    const normalized = String(trial.datasetTrial ?? '').replace(/^\/+|\/+$/g, '')
+    const matched = byAlias.get(normalized) ?? byAlias.get(normalized.split('/').at(-1))
+    if (!matched) return { ...trial, displayName: trial.datasetTrial ?? trial.name }
+    return {
+      ...trial,
+      displayName: taskDisplayName(matched.task) || trial.datasetTrial || trial.name,
+      taskId: matched.task.id,
+      datasetOrder: matched.datasetOrder,
+    }
+  })
+}
+
 export async function readTrialsPage(config, args) {
   const job = safeSegment(args.job, 'job')
   const offset = Math.max(0, Number.parseInt(args.offset ?? 0, 10) || 0)
@@ -362,11 +406,12 @@ export async function readTrialsPage(config, args) {
   const evidence = String(args.evidence ?? '')
   const sort = String(args.sort ?? 'dataset-order')
   const source = await jobTrials(config, job)
-  let trials = source.trials
-  if (query) trials = trials.filter(trial => `${trial.id ?? ''} ${trial.name ?? ''} ${trial.datasetTrial ?? ''}`.toLowerCase().includes(query))
+  let trials = await enrichTrialsWithDataset(config, job, source.trials)
+  if (query) trials = trials.filter(trial => `${trial.id ?? ''} ${trial.displayName ?? ''} ${trial.name ?? ''} ${trial.datasetTrial ?? ''}`.toLowerCase().includes(query))
   if (status) trials = trials.filter(trial => trial.status === status)
   if (validity) trials = trials.filter(trial => String(Boolean(trial.score?.valid)) === validity)
   if (evidence) trials = trials.filter(trial => String(Boolean(trial.evidenceAvailable)) === evidence)
+  if (sort === 'dataset-order') trials = [...trials].sort((a, b) => a.datasetOrder - b.datasetOrder || a.attempt - b.attempt)
   if (sort === 'latest-completed') trials = [...trials].sort((a, b) => Date.parse(b.updatedAt ?? 0) - Date.parse(a.updatedAt ?? 0))
   if (sort === 'lowest-score') trials = [...trials].sort((a, b) => (a.score?.value ?? Number.POSITIVE_INFINITY) - (b.score?.value ?? Number.POSITIVE_INFINITY))
   if (sort === 'errors') trials = [...trials].sort((a, b) => Number(!b.exception && b.score?.valid !== false) - Number(!a.exception && a.score?.valid !== false))
@@ -429,6 +474,27 @@ async function previewFromTrialFiles(directory, lifecycle) {
   return messages.length ? { kind: 'document', format: 'text', title: 'Agent final response', content: messages.at(-1), artifact_ref: 'agent/trajectory.json', provenance: [{ label: 'ACP Final Response', kind: 'acp-final-response', artifact_ref: 'agent/trajectory.json' }] } : undefined
 }
 
+async function evaluatorResultFromTrialFiles(directory, lifecycle) {
+  let trialName
+  try { trialName = safeSegment(lifecycle?.name, 'trial directory') } catch { return undefined }
+  const trialDirectory = path.join(directory, trialName)
+  const check = await directoryCheck(trialDirectory)
+  if (check.status !== 'ok') return undefined
+  const result = await readJson(path.join(trialDirectory, 'verifier', 'evaluation-result.json'), { maxBytes: 128_000, maxText: 32_000 })
+  return result && !result.__readError ? result : undefined
+}
+
+function enrichAssessmentWithEvaluator(assessment, evaluatorResult) {
+  if (!assessment) return assessment
+  const byCriterion = new Map((evaluatorResult?.criteria ?? []).filter(isObject).map(item => [String(item.id), item]))
+  const criteria = (assessment.criteria ?? []).map(item => {
+    const evaluator = byCriterion.get(String(item.id))
+    return evaluator ? { ...item, reason: evaluator.reason ?? item.reason, recommendation: evaluator.recommendation ?? item.recommendation } : item
+  })
+  const evaluatorRecommendations = (evaluatorResult?.recommendations ?? []).map(item => isObject(item) ? item : { message: String(item) })
+  return { ...assessment, criteria, recommendations: [...(assessment.recommendations ?? []), ...evaluatorRecommendations] }
+}
+
 async function datasetRoots(directory, projectRoot) {
   const entries = await readdir(directory, { withFileTypes: true })
   const roots = []
@@ -477,6 +543,7 @@ export async function readTrialDetail(config, args) {
   }
   if (assessment?.__readError) throw new Error('Trial assessment is invalid')
   if (!assessment && !lifecycle) throw new Error('Trial not found')
+  assessment = enrichAssessmentWithEvaluator(assessment, await evaluatorResultFromTrialFiles(directory, lifecycle))
   const assessmentPreview = previewFromOutput(assessment?.output, assessment?.evidence_provenance)
   const realAssessmentOutput = assessment?.evidence_provenance?.some(item => item?.kind === 'real-renderer' || item?.kind === 'agent-artifact')
   const filePreview = realAssessmentOutput ? undefined : await previewFromTrialFiles(directory, lifecycle)
@@ -502,6 +569,45 @@ export async function readJobProgress(config, args) {
     datasetTotal: source.total,
     counts: source.lifecycle?.counts ?? {},
     changed,
+  }
+}
+
+export async function readMetaEvaluation(config, args = {}) {
+  const evaluationRoot = resolveWithin(config.projectRoot, args.evaluationRoot ?? '.', 'evaluationRoot')
+  const groundTruth = await readJson(path.join(evaluationRoot, '.harbor', 'ground-truth.json'), { maxText: 64_000 })
+  const report = await readJson(path.join(evaluationRoot, '.harbor', 'meta-evaluation-report.json'), { maxText: 64_000 })
+  const availableGroundTruth = groundTruth && !groundTruth.__readError
+  const availableReport = report && !report.__readError
+  const cases = availableGroundTruth && Array.isArray(groundTruth.cases) ? groundTruth.cases : []
+  return {
+    schemaVersion: 1,
+    evaluationRoot: path.relative(config.projectRoot, evaluationRoot) || '.',
+    status: availableReport ? 'evaluated' : availableGroundTruth ? (cases.length ? 'ground-truth-ready' : 'ground-truth-draft') : 'ground-truth-required',
+    groundTruth: availableGroundTruth ? {
+      id: groundTruth.ground_truth_id,
+      version: groundTruth.version,
+      source: groundTruth.source,
+      criteria: groundTruth.criteria ?? [],
+      caseCount: cases.length,
+      badcaseCount: cases.filter(item => item?.badcase).length,
+      path: path.relative(config.projectRoot, path.join(evaluationRoot, '.harbor', 'ground-truth.json')),
+    } : undefined,
+    report: availableReport ? report : undefined,
+    workflow: {
+      candidate: 'Evaluator / Rubric / Judge identity',
+      dataset: 'Fixed artifacts plus independent Ground Truth',
+      output: 'Repeated evaluator-observations/v1',
+      verifier: 'ESF / SCE / RCR reducer',
+      automaticAgentBaseline: false,
+      sourceKinds: ['human', 'programmatic', 'consensus', 'model', 'external'],
+      nextAction: !availableGroundTruth
+        ? 'Initialize Ground Truth with harbor_ground_truth_init, then add versioned cases.'
+        : !cases.length
+          ? 'Add cases with artifact_ref and ternary criterion labels before collecting observations.'
+          : !availableReport
+            ? 'Collect repeated evaluator observations and run harbor_evaluator_meta_evaluate.'
+            : 'Review disagreements before adopting the evaluator and establishing a fresh Agent baseline.',
+    },
   }
 }
 
@@ -602,13 +708,13 @@ export async function readEvaluatorGovernance(config, args) {
       steps: [
         'Inspect the current Evaluator, Rubric, Judge, Contract, and representative false-positive/false-negative Trials.',
         'Create a new Evaluator/Rubric/Judge identity and source file; never overwrite the historical identity.',
-        'Run meta-evaluation against independently maintained human GT and report RCR, bias, variance, calibration, latency, and cost as applicable.',
+        'Run meta-evaluation against independently maintained, provenance-bearing GT and report ESF, SCE, RCR, latency, and cost as applicable.',
         'Update Evaluation Stack identity and preview Context v2 impact.',
         'Establish a fresh Agent baseline before comparing Agent Candidates under the new reward semantics.',
       ],
       freshBaselineRequiredWhen: ['evaluator digest changes', 'rubric digest changes', 'judge identity or parameters change'],
       automaticActions: [],
-      skillPrompt: 'Use evolve-agent-with-harbor to upgrade this evaluator. First inspect governance evidence, clarify GT ownership and target meta-metrics, then propose a new immutable evaluator identity and fresh-baseline plan. Do not edit or run anything until I approve the controlled change.',
+      skillPrompt: 'Use evolve-agent-with-harbor to upgrade this evaluator. First inspect governance evidence, clarify GT source type, provenance, ownership, and target meta-metrics, then propose a new immutable evaluator identity and fresh-baseline plan. Do not edit or run anything until I approve the controlled change.',
     },
   }
 }

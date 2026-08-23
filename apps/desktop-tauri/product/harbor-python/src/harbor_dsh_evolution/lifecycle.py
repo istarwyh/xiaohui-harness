@@ -51,6 +51,25 @@ def terminal_phase(result: Any) -> str:
     return "completed"
 
 
+def _task_aliases(task: dict[str, Any]) -> list[str]:
+    """Return stable Harbor/Dataset aliases without depending on callback order."""
+    metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+    values = (task.get("id"), task.get("path"), metadata.get("task_name"))
+    aliases: set[str] = set()
+    for value in values:
+        normalized = str(value or "").strip().strip("/")
+        if not normalized or normalized == ".":
+            continue
+        aliases.add(normalized)
+        aliases.add(normalized.rsplit("/", 1)[-1])
+    return sorted(aliases)
+
+
+def _event_aliases(task_name: str) -> set[str]:
+    normalized = str(task_name).strip().strip("/")
+    return {normalized, normalized.rsplit("/", 1)[-1]} if normalized else set()
+
+
 class TrialLifecycleStore:
     """Append-only Trial events plus one small, atomic current-state snapshot."""
 
@@ -65,6 +84,7 @@ class TrialLifecycleStore:
                 "dataset_order": index,
                 "dataset_trial": str(task.get("id") or f"trial-{index + 1}"),
                 "trial": str(task.get("id") or f"trial-{index + 1}"),
+                "_task_aliases": _task_aliases(task),
                 "execution_id": None,
                 "trial_name": None,
                 "phase": "queued",
@@ -88,26 +108,27 @@ class TrialLifecycleStore:
         result = event.result
         execution_id = str(result.id)
         task_name = str(event.task_name)
+        task_aliases = _event_aliases(task_name)
         for record in self._records:
             if record.get("execution_id") == execution_id:
                 return record
         for record in self._records:
-            if record["dataset_trial"] == task_name and not record.get("execution_id"):
+            if task_aliases.intersection(record.get("_task_aliases", ()) or ()) and not record.get("execution_id"):
                 return record
         # A Harbor retry/repetition is a new immutable attempt, never an overwrite.
         previous = next(
-            (item for item in reversed(self._records) if item["dataset_trial"] == task_name),
+            (
+                item
+                for item in reversed(self._records)
+                if task_aliases.intersection(item.get("_task_aliases", ()) or ())
+            ),
             None,
         )
-        if previous is None:
-            for record in self._records:
-                if not record.get("execution_id"):
-                    return record
-            previous = self._records[-1] if self._records else None
         record = {
             "dataset_order": previous["dataset_order"] if previous else len(self._records),
             "dataset_trial": task_name,
             "trial": task_name,
+            "_task_aliases": sorted(task_aliases),
             "execution_id": None,
             "trial_name": None,
             "phase": "queued",
@@ -199,6 +220,9 @@ class TrialLifecycleStore:
                 "counts": dict(sorted(counts.items())),
                 "attempt_counts": dict(sorted(attempt_counts.items())),
                 "selected_attempt_policy": "latest-attempt-per-dataset-item",
-                "trials": selected,
+                "trials": [
+                    {key: value for key, value in item.items() if not key.startswith("_")}
+                    for item in selected
+                ],
             },
         )

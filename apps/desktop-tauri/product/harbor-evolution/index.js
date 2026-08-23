@@ -83,7 +83,7 @@ export function apply(ctx, config) {
 
   ctx.tools.register(jsonTool({
     name: 'harbor_evolution_init',
-    description: 'Initialize a strict, non-overwriting Evaluation Stack project after the Skill has clarified identities, primary metric, judge, and promotion threshold.',
+    description: 'Compile an accepted Dataset, Generator, Evaluator/criteria, and Optimizer onboarding card into a strict, non-overwriting Evaluation Stack project. Detailed identity fields are internal tool inputs, not a user questionnaire.',
     parameters: {
       datasetPath: { type: 'string', required: true },
       stackId: { type: 'string', required: true },
@@ -112,7 +112,7 @@ export function apply(ctx, config) {
       stackPath: { type: 'string', required: true },
       policyPath: { type: 'string' },
       mode: { type: 'string', required: true },
-      candidateProvider: { type: 'string', description: 'Optional Candidate provider; provider and model must be supplied together. Defaults to the current XiaoHui Agent selection.' },
+      candidateProvider: { type: 'string', description: 'Optional Candidate provider. Supply it together with candidateModel; defaults to the current DSH Agent model.' },
       candidateModel: { type: 'string' },
       candidateReasoningEffort: { type: 'string' },
     },
@@ -136,7 +136,7 @@ export function apply(ctx, config) {
       datasetPath: { type: 'string', required: true },
       stackPath: { type: 'string', required: true },
       mode: { type: 'string', required: true },
-      candidateProvider: { type: 'string', description: 'Optional Candidate provider; provider and model must be supplied together. Defaults to the current XiaoHui Agent selection.' },
+      candidateProvider: { type: 'string', description: 'Optional Candidate provider. Supply it together with candidateModel; defaults to the current DSH Agent model.' },
       candidateModel: { type: 'string' },
       candidateReasoningEffort: { type: 'string' },
     },
@@ -154,7 +154,7 @@ export function apply(ctx, config) {
       mode: { type: 'string', required: true },
       policyPath: { type: 'string' },
       jobName: { type: 'string' },
-      candidateProvider: { type: 'string', description: 'Optional Candidate provider; provider and model must be supplied together. Defaults to the current XiaoHui Agent selection and is frozen before the Job starts.' },
+      candidateProvider: { type: 'string', description: 'Optional Candidate provider. Supply it together with candidateModel; defaults to the current DSH Agent model and is frozen before the Job starts.' },
       candidateModel: { type: 'string' },
       candidateReasoningEffort: { type: 'string' },
     },
@@ -192,6 +192,30 @@ export function apply(ctx, config) {
       newStackVersion: { type: 'string', required: true },
     },
   }, args => service.evaluator(args)))
+
+  ctx.tools.register(jsonTool({
+    name: 'harbor_ground_truth_init',
+    description: 'Create a non-overwriting Ground Truth draft for evaluator meta-evaluation. GT may be human, programmatic, consensus, model, or external, but must have explicit provenance and remain independent of the Candidate evaluator.',
+    parameters: {
+      outputPath: { type: 'string', description: 'Defaults to .harbor/ground-truth.json' },
+      groundTruthId: { type: 'string', required: true },
+      version: { type: 'string', required: true },
+      sourceKind: { type: 'string', required: true, description: 'human, programmatic, consensus, model, or external' },
+      sourceDescription: { type: 'string', required: true },
+      provenance: { type: 'string', required: true },
+      criteria: { type: 'string', required: true, description: 'Comma-separated criterion ids' },
+    },
+  }, args => service.groundTruthInitialize(args)))
+
+  ctx.tools.register(jsonTool({
+    name: 'harbor_evaluator_meta_evaluate',
+    description: 'Compare repeated evaluator-observations/v1 with independent ground-truth/v1 and write an ESF, SCE, and RCR meta-evaluation report.',
+    parameters: {
+      groundTruthPath: { type: 'string', description: 'Defaults to .harbor/ground-truth.json' },
+      observationsPath: { type: 'string', required: true },
+      outputPath: { type: 'string', description: 'Defaults to .harbor/meta-evaluation-report.json' },
+    },
+  }, args => service.evaluatorMetaEvaluate(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_candidate_compare',

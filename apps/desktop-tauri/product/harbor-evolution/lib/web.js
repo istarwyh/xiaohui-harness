@@ -7,6 +7,7 @@ export const PROGRESS_ROUTE = '/_dsh/harbor-evolution/progress'
 export const COMPARE_ROUTE = '/_dsh/harbor-evolution/compare'
 export const GOVERNANCE_ROUTE = '/_dsh/harbor-evolution/governance'
 export const EVALUATOR_ROUTE = '/_dsh/harbor-evolution/evaluator'
+export const META_ROUTE = '/_dsh/harbor-evolution/meta'
 const MAX_MUTATION_BYTES = 256 * 1024
 
 function sendJson(response, status, body) {
@@ -114,6 +115,7 @@ export function installDashboardWeb(ctx, service) {
       [COMPARE_ROUTE, createApiHandler(args => service.comparison(args), 'comparison-unavailable')],
       [GOVERNANCE_ROUTE, createApiHandler(args => service.governance(args), 'governance-unavailable')],
       [EVALUATOR_ROUTE, createMutationHandler(args => service.evaluator(args), 'evaluator-update-failed')],
+      [META_ROUTE, createApiHandler(args => service.meta(args), 'meta-evaluation-unavailable')],
     ]
     for (const [route, handler] of routes) {
       webCtx.effect(() => webCtx.webServer.register({ kind: 'exact', path: route, handler }), `harbor-evolution: ${route}`)

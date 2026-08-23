@@ -31,7 +31,7 @@ class GatewayAdapter {
   }
 
   providerInfo(provider) {
-    return { id: provider, name: 'XiaoHui Host Model' }
+    return { id: provider, name: 'DSH Host Model' }
   }
 
   providerRetryPolicy() {

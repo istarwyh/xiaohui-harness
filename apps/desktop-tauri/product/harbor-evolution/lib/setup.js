@@ -267,7 +267,11 @@ export async function setupIntegration(raw = {}, dependencies = {}) {
   try {
     await run('pnpm', [
       '--silent', 'dlx', `@deepseek-ai/dsh@${DSH_VERSION}`,
-      'plugin', '--profile', config.profile, 'add', '-w', '--save-exact', config.pluginSpec,
+      // Registry packages ship their built client and need no lifecycle
+      // scripts. Skipping scripts also prevents pnpm 11 from reclassifying
+      // unrelated DSH native dependencies as newly unapproved builds while
+      // adding this plugin to an existing profile.
+      'plugin', '--profile', config.profile, 'add', '-w', '--save-exact', '--ignore-scripts', config.pluginSpec,
     ], { env: { ...env, DSH_HOME: config.dshHome } })
   } catch (error) {
     throw new Error(processFailure(error))

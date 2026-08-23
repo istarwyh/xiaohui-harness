@@ -175,7 +175,7 @@ mod tests {
             project_root: root.join("workspace"),
             harbor_bin: root.join("runtime").join("harbor"),
             harbor_dsh_bin: root.join("runtime").join("harbor-dsh"),
-            integration_version: "0.6.0".into(),
+            integration_version: "0.7.1".into(),
         }
     }
 

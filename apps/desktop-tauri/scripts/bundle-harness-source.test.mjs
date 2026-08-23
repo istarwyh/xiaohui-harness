@@ -101,6 +101,10 @@ test('installProductPlugins makes every XiaoHui plugin an in-box CLI dependency'
     assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent'], 'workspace:*')
     assert.ok(readFileSync(join(root, 'packages', 'product', 'harbor-evolution', 'skills', 'evolve-agent-with-harbor', 'SKILL.md'), 'utf8').length > 0)
     assert.equal(
+      JSON.parse(readFileSync(join(root, 'packages', 'product', 'harbor-evolution', 'schemas', 'meta-evaluation-report.schema.json'), 'utf8')).title,
+      'Evaluator Meta-Evaluation Report v1',
+    )
+    assert.equal(
       JSON.parse(readFileSync(join(root, 'packages', 'product', 'dsh-codex-auth', 'package.json'), 'utf8')).version,
       '0.3.0',
     )

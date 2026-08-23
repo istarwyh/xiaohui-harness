@@ -6,7 +6,7 @@
 
 它提供：
 
-- `DshCandidateAgent`：验证并上传不可变 Candidate，从任务容器内检查 XiaoHui Host 模型 Broker，生成临时的 Cordis 模型绑定 Overlay，安装锁定的 npm 依赖，再通过 Harbor ACP Runner 执行，同时不复制可复用的 Provider 凭据。
+- `DshCandidateAgent`：验证并上传不可变 Candidate，从任务容器内检查 DSH Host Model Broker，生成临时 Cordis 模型绑定 Overlay，安装锁定的 npm 依赖，再通过 Harbor ACP Runner 执行 Candidate，同时不复制可复用的 Provider 凭据。
 - `EvolutionPlugin`：把每个 Job 绑定到 Candidate、Dataset Manifest、Evaluation Stack Manifest、Context v2、Architecture Doctor、Trial Assessment、Population Report 与 Summary。
 - `harbor-dsh`：初始化严格项目，验证或快照 Candidate、Dataset 和 Stack，预览 Context v2，执行架构诊断、Job 汇总和确定性的 Promotion Gate。
 
@@ -36,4 +36,4 @@ Harbor 与该包必须位于同一个 Python 环境中，`harbor plugins list` �
 
 `snapshot` 默认从 `package.json` 推导 Candidate id 与版本，也允许显式指定。Context v1 不被接受；晋级要求 Context v2，并输出结构化的不匹配、制品、基础设施、指标与回归原因码。
 
-模型 Broker URL、Job Capability、Protocol 与模型 Metadata 由 `dsh-harbor-evolution` 在启动 Harbor 时注入。直接调用 `harbor run` 的集成方必须自行提供这份内部契约；它不是提供给最终用户的第二套凭据配置面。生成的 `.harbor-runtime` 目录为保留路径，不会进入 Candidate 快照。
+模型 Broker URL、Job Capability、Protocol 与模型 Metadata 由 `dsh-harbor-evolution` 在启动 Harbor 时注入。直接调用 `harbor run` 的集成方必须自行提供这份内部配置；它不是提供给最终用户的第二套凭据配置。生成的 `.harbor-runtime` 目录为保留路径，不会进入 Candidate 快照。
