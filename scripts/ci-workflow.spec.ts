@@ -84,6 +84,8 @@ describe('CI workflow', () => {
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: "${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '1' }}",
+      DSH_COVERAGE_PARTITIONS: "${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '' }}",
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
     })
     const nativeSteps = windowsNative.steps as unknown[]
