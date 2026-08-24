@@ -16,10 +16,10 @@ npx --yes dsh-harbor-evolution@latest setup --project-root "$PWD"
 
 Setup 命令会安装两个必需的运行时：
 
-- 在托管的 Python 环境中安装 `harbor-dsh-evolution==0.7.1`。
-- 在所选 DSH Profile 中安装 `dsh-harbor-evolution@0.7.1`。
+- 在托管的 Python 环境中安装 `harbor-dsh-evolution==0.7.2`。
+- 在所选 DSH Profile 中安装 `dsh-harbor-evolution@0.7.2`。
 
-随后，它会把 Harbor 可执行文件的绝对路径与 `projectRoot` 写入 Profile 的 `harbor-evolution` 配置块，并验证集成。无关的 Profile 条目会被保留；重复执行只会更新同一个配置块。
+随后，它会把 Harbor 可执行文件的绝对路径与一个回退 `projectRoot` 写入 Profile 的 `harbor-evolution` 配置块，并验证集成。Agent Tool 每次调用都会以当前 Session 的绝对工作目录作为项目根目录；配置值只供 Web Workbench 和非 Agent 场景回退使用。无关的 Profile 条目会被保留；重复执行只会更新同一个配置块。
 
 默认 Profile 是 `web`。只有实际运行该 Profile 时才使用 `--profile headless`。查看全部选项：
 
@@ -81,7 +81,7 @@ Web UI 有意保持只读。启动评测和决定晋级始终属于 Agent + Skil
     pythonPath: ""
 ```
 
-发布版 Python 包应保持 `pythonPath` 为空。`candidatePath`、`datasetPath`、`jobPath` 和 `policyPath` 都被限制在 `projectRoot` 内。
+发布版 Python 包应保持 `pythonPath` 为空。对 Agent Tool 调用而言，`projectRoot` 会在该次调用中替换为 Session 工作目录；`candidatePath`、`datasetPath`、`jobPath` 和 `policyPath` 都被限制在这个请求级根目录内，因此并发 Session 不会互相重定向 Harbor 操作。
 
 从仓库进行源码开发：
 

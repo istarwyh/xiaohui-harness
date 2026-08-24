@@ -6,6 +6,7 @@ import {
   installPersonalBrandOccupants, resolveWorkbenchBrand,
   type WorkbenchSettingsValue,
 } from '../src/client/index.tsx'
+import { PERSONAL_WORKBENCH_CSS } from '../src/client/styles.ts'
 
 class FakeScope implements SettingsScope<WorkbenchSettingsValue> {
   private listeners = new Set<() => void>()
@@ -43,6 +44,12 @@ function declareBrandHoles(slots: SlotRegistry): () => void {
 }
 
 describe('personal workbench browser behavior', () => {
+  it('pairs the primary button fill with the theme foreground token', () => {
+    expect(PERSONAL_WORKBENCH_CSS).toContain('background:var(--dsw-alias-button-primary-fill)')
+    expect(PERSONAL_WORKBENCH_CSS).toContain('color:var(--dsw-alias-label-primary-foreground)')
+    expect(PERSONAL_WORKBENCH_CSS).not.toContain('color:white')
+  })
+
   it('normalizes only enabled plain-text and bitmap branding', () => {
     expect(resolveWorkbenchBrand({ enabled: false, name: 'A', logo: 'data:image/png;base64,YQ==' }))
       .toEqual({})

@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -76,7 +77,7 @@ pub struct HostOverlay {
     pub notify_url: String,
 }
 
-/// Spawn `dsh web --host 127.0.0.1 --port <port>` and wait until HTTP responds.
+/// Spawn `dsh web --no-open --host 127.0.0.1 --port <port>` and wait until HTTP responds.
 /// A Host that dies naming a loader entry (`failed to apply loader entry <id>`)
 /// is respawned with that plugin disabled through a rescue `--patch` overlay,
 /// so one broken community plugin cannot keep the desktop closed; the disable
@@ -516,19 +517,16 @@ fn spawn_child(
     rescue_patch: Option<&Path>,
 ) -> Result<Child, String> {
     let mut cmd = Command::new(&paths.node_binary);
-    cmd.arg(&paths.cli_entry).arg("web");
+    cmd.args(native_web_args(
+        &paths.cli_entry,
+        port,
+        overlay.map(|value| value.patch_file.as_path()),
+        rescue_patch,
+    ));
     if let Some(overlay) = overlay {
-        cmd.arg("--patch").arg(&overlay.patch_file);
         cmd.env("DSH_DESKTOP_NOTIFY_URL", &overlay.notify_url);
     }
-    if let Some(patch) = rescue_patch {
-        cmd.arg("--patch").arg(patch);
-    }
-    cmd.arg("--host")
-        .arg("127.0.0.1")
-        .arg("--port")
-        .arg(port.to_string())
-        .env("DSH_HOME", &paths.dsh_home)
+    cmd.env("DSH_HOME", &paths.dsh_home)
         .env("PATH", host_path)
         .env("NODE_ENV", "production")
         .current_dir(&paths.harness_root)
@@ -539,6 +537,30 @@ fn spawn_child(
     hide_console(&mut cmd);
 
     cmd.spawn().map_err(|e| format!("无法启动 dsh web: {e}"))
+}
+
+fn native_web_args(
+    cli_entry: &Path,
+    port: u16,
+    overlay_patch: Option<&Path>,
+    rescue_patch: Option<&Path>,
+) -> Vec<OsString> {
+    let mut args = vec![
+        cli_entry.as_os_str().to_owned(),
+        "web".into(),
+        "--no-open".into(),
+    ];
+    for patch in [overlay_patch, rescue_patch].into_iter().flatten() {
+        args.push("--patch".into());
+        args.push(patch.as_os_str().to_owned());
+    }
+    args.extend([
+        "--host".into(),
+        "127.0.0.1".into(),
+        "--port".into(),
+        port.to_string().into(),
+    ]);
+    args
 }
 
 fn drain_lines<R: std::io::Read>(reader: R, sink: Arc<Mutex<Vec<String>>>) {
@@ -647,10 +669,11 @@ fn port_free(port: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        failing_loader_entry, parse_linux_pid_from_stderr, read_linux_pid_handshake,
-        rescue_patch_body, wsl_stop_args,
+        failing_loader_entry, native_web_args, parse_linux_pid_from_stderr,
+        read_linux_pid_handshake, rescue_patch_body, wsl_stop_args,
     };
     use std::io::Read;
+    use std::path::Path;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -673,6 +696,36 @@ invalid plugin, expect function or object with an \"apply\" method, received obj
         assert_eq!(
             rescue_patch_body(&["a-b".to_string(), "c.d".to_string()]),
             "- id: a-b\n  disabled: true\n- id: c.d\n  disabled: true\n"
+        );
+    }
+
+    #[test]
+    fn native_desktop_host_never_opens_the_default_browser() {
+        let args = native_web_args(
+            Path::new("/Applications/XiaoHui Harness.app/cli.js"),
+            17890,
+            Some(Path::new("/tmp/desktop-overlay.yml")),
+            Some(Path::new("/tmp/rescue-overlay.yml")),
+        );
+        let values = args
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            values,
+            [
+                "/Applications/XiaoHui Harness.app/cli.js",
+                "web",
+                "--no-open",
+                "--patch",
+                "/tmp/desktop-overlay.yml",
+                "--patch",
+                "/tmp/rescue-overlay.yml",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "17890",
+            ]
         );
     }
 

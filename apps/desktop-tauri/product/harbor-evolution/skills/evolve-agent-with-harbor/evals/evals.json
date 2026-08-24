@@ -33,6 +33,17 @@
         "The response maps the supplied paths and curl into the four-concept confirmation card.",
         "The response does not run initialization or evaluation before confirmation."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "当前 Session 工作目录是 /Users/mac/Documents/Harness，但 Harbor Plugin 配置里显示的 projectRoot 是 /Users/mac/Library/Application Support/XiaoHui Harness/workspace。请在当前项目下初始化 ./harbor-evolution。",
+      "expected_output": "把当前 Session 工作目录作为 Agent Tool 的项目根目录，继续准备 /Users/mac/Documents/Harness/harbor-evolution 的初始化确认卡；说明配置值只供 Web Workbench 或非 Agent 场景回退使用，不要求修改配置，也不因路径不同而拒绝初始化。",
+      "files": [],
+      "assertions": [
+        "The response treats the calling session working directory as the Agent Tool project root.",
+        "The response does not block initialization or require a projectRoot configuration change because the fallback differs.",
+        "The proposed managed workspace stays under /Users/mac/Documents/Harness."
+      ]
     }
   ]
 }

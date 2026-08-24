@@ -33,7 +33,7 @@ Do not turn an inspection or diagnostic request into Agent mutation or deploymen
 
 Inspect the current workspace before asking questions. Look for Agent entry files, package metadata, curl examples, Dataset instructions, existing Harbor configuration/Jobs, tests, and available Codex or Claude Code commands. Reuse reliable findings and say what was inferred; do not ask the user to transcribe information already present in files.
 
-When no Harbor workspace exists, propose `./harbor-evolution/` under the current working directory as the managed evaluation workspace. Keep imported snapshots and generated evaluation files there. If the installed Plugin is configured to a different `projectRoot`, explain the mismatch and propose the exact configuration change before writing anything.
+When no Harbor workspace exists, propose `./harbor-evolution/` under the current session working directory as the managed evaluation workspace. Agent-facing Harbor Tools derive `projectRoot` from the calling session for every invocation and keep imported snapshots and generated evaluation files inside that request-local root. Treat the Plugin's configured `projectRoot` only as the Web Workbench and non-Agent fallback; do not block initialization merely because it differs from the current session working directory.
 
 Ask only for missing parts of the four-concept intake, using the user's language and short examples:
 

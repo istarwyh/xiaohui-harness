@@ -12,6 +12,8 @@ XiaoHui Harness 以一套明确的工作台形态发布，但发行版仍固定�
 
 发行版内置产品插件 `dsh-personal-workbench`，并在通用设置中提供一张卡片。卡片允许编辑工作台名称、上传 Logo、预览草稿、把结果应用到侧边栏和空会话标记，也允许恢复 XiaoHui 默认。配置持久化在当前 Profile 的 `personal-workbench` 设置命名空间。
 
+卡片遵循共享主题的主按钮配方：`--dsw-alias-button-primary-fill` 提供背景，`--dsw-alias-label-primary-foreground` 提供与之配对的文字颜色。它不会硬编码浅色前景，因为主按钮背景在暗色模式中变浅、在亮色模式中变深。
+
 自定义呈现只占用 `sidebar.brand.name`、`sidebar.brand.mark` 和 `conversation.hero.brand.mark`。某个字段停用或缺失时，插件不会为它注册 occupant，因此对应 shell 仍是默认呈现的所有者。个人 occupant 使用 `-10` 优先级覆盖已有品牌 occupant，而不修改对方 Package。
 
 ## Alternatives considered
@@ -26,4 +28,4 @@ XiaoHui Harness 以一套明确的工作台形态发布，但发行版仍固定�
 
 用户可以直接在运行中的应用里个性化工作台，也能恢复发行版默认值，无需编辑 YAML。该能力新增一个 Profile 命名空间和三个条件式 slot occupant，并有意不提供按 Workspace 区分身份或更广泛的换肤能力。
 
-该 Package 会被复制到桌面端裁剪后的 workspace，进入 CLI 依赖闭包，并由桌面 Overlay 激活。聚焦测试固定设置默认值、应用与恢复的 occupant 生命周期、Bundle 收录和 Overlay 激活。
+该 Package 会被复制到桌面端裁剪后的 workspace，进入 CLI 依赖闭包，并由桌面 Overlay 激活。聚焦测试固定设置默认值、应用与恢复的 occupant 生命周期、适配主题的主按钮 Token 配对、Bundle 收录和 Overlay 激活。

@@ -47,10 +47,18 @@ function jsonTool(definition, execute) {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: value }],
     },
-    async execute(args) {
-      return JSON.stringify(await execute(args), null, 2)
+    async execute(args, exec) {
+      return JSON.stringify(await execute(args, exec), null, 2)
     },
   })
+}
+
+function toolProjectRoot(exec) {
+  const cwd = exec?.agent?.session?.header?.cwd
+  if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) {
+    throw new Error('Harbor tools require an Agent session with an absolute working directory')
+  }
+  return path.resolve(cwd)
 }
 
 export function apply(ctx, config) {
@@ -66,7 +74,12 @@ export function apply(ctx, config) {
     ),
   }
   const modelRuntime = new CandidateModelRuntime(ctx, resolved)
-  const service = new EvolutionService(resolved, { pluginVersion: packageJson.version }, modelRuntime)
+  const metadata = { pluginVersion: packageJson.version }
+  const service = new EvolutionService(resolved, metadata, modelRuntime)
+  const serviceForTool = exec => new EvolutionService({
+    ...resolved,
+    projectRoot: toolProjectRoot(exec),
+  }, metadata, modelRuntime)
 
   ctx.skills.register(loadBundledSkill())
   installDashboardWeb(ctx, service)
@@ -79,7 +92,7 @@ export function apply(ctx, config) {
       candidateId: { type: 'string' },
       version: { type: 'string' },
     },
-  }, args => service.snapshot(args)))
+  }, (args, exec) => serviceForTool(exec).snapshot(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_evolution_init',
@@ -101,7 +114,7 @@ export function apply(ctx, config) {
       policyVersion: { type: 'string', required: true },
       minImprovement: { type: 'number', required: true },
     },
-  }, args => service.initialize(args)))
+  }, (args, exec) => serviceForTool(exec).initialize(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_evolution_doctor',
@@ -116,7 +129,7 @@ export function apply(ctx, config) {
       candidateModel: { type: 'string' },
       candidateReasoningEffort: { type: 'string' },
     },
-  }, args => service.doctor(args)))
+  }, (args, exec) => serviceForTool(exec).doctor(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_dataset_validate',
@@ -124,7 +137,7 @@ export function apply(ctx, config) {
     parameters: {
       datasetPath: { type: 'string', required: true },
     },
-  }, args => service.validateDataset(args)))
+  }, (args, exec) => serviceForTool(exec).validateDataset(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_context_preview',
@@ -140,7 +153,7 @@ export function apply(ctx, config) {
       candidateModel: { type: 'string' },
       candidateReasoningEffort: { type: 'string' },
     },
-  }, args => service.previewContext(args)))
+  }, (args, exec) => serviceForTool(exec).previewContext(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_eval_run',
@@ -158,7 +171,7 @@ export function apply(ctx, config) {
       candidateModel: { type: 'string' },
       candidateReasoningEffort: { type: 'string' },
     },
-  }, args => service.run(args)))
+  }, (args, exec) => serviceForTool(exec).run(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_eval_result',
@@ -170,7 +183,7 @@ export function apply(ctx, config) {
       compareJob: { type: 'string', description: 'Optional previous Job for view=governance impact analysis' },
       since: { type: 'string', description: 'Optional ISO timestamp for incremental progress changes' },
     },
-  }, args => service.result(args)))
+  }, (args, exec) => serviceForTool(exec).result(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_evaluator_inspect',
@@ -178,7 +191,7 @@ export function apply(ctx, config) {
     parameters: {
       stackPath: { type: 'string', description: 'Defaults to .harbor/evaluation-stack.yml' },
     },
-  }, args => service.evaluatorInspect(args)))
+  }, (args, exec) => serviceForTool(exec).evaluatorInspect(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_evaluator_update',
@@ -191,7 +204,7 @@ export function apply(ctx, config) {
       newEvaluatorVersion: { type: 'string', required: true },
       newStackVersion: { type: 'string', required: true },
     },
-  }, args => service.evaluator(args)))
+  }, (args, exec) => serviceForTool(exec).evaluator(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_ground_truth_init',
@@ -205,7 +218,7 @@ export function apply(ctx, config) {
       provenance: { type: 'string', required: true },
       criteria: { type: 'string', required: true, description: 'Comma-separated criterion ids' },
     },
-  }, args => service.groundTruthInitialize(args)))
+  }, (args, exec) => serviceForTool(exec).groundTruthInitialize(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_evaluator_meta_evaluate',
@@ -215,7 +228,7 @@ export function apply(ctx, config) {
       observationsPath: { type: 'string', required: true },
       outputPath: { type: 'string', description: 'Defaults to .harbor/meta-evaluation-report.json' },
     },
-  }, args => service.evaluatorMetaEvaluate(args)))
+  }, (args, exec) => serviceForTool(exec).evaluatorMetaEvaluate(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_candidate_compare',
@@ -225,5 +238,5 @@ export function apply(ctx, config) {
       candidateJob: { type: 'string', required: true },
       policyPath: { type: 'string', required: true },
     },
-  }, args => service.compare(args)))
+  }, (args, exec) => serviceForTool(exec).compare(args)))
 }
