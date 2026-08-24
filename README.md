@@ -16,8 +16,8 @@ The first release targets Apple Silicon only. The application keeps its sessions
 |---|---|
 | Desktop shell | Tauri 2 window, tray, notifications, process supervision, startup recovery, and signed updater |
 | Harness | A trimmed, built DeepSeek Harness source tree, frozen product lockfile, compressed offline dependency store, and checksum-pinned macOS arm64 Node/pnpm toolchain |
-| Product plugins | Committed `dsh-harbor-evolution@0.7.1`, `dsh-codex-auth@0.3.0`, `dsh-better-sidebar@0.15.1`, and `dsh-personal-workbench@0.1.0`; Harbor includes the `evolve-agent-with-harbor` Skill |
-| Evaluation runtime | Portable CPython 3.12 with the committed `harbor-dsh-evolution==0.7.1` source snapshot and Harbor |
+| Product plugins | Committed `dsh-harbor-evolution@0.7.2`, `dsh-codex-auth@0.3.0`, `dsh-better-sidebar@0.15.1`, and `dsh-personal-workbench@0.1.0`; Harbor includes the `evolve-agent-with-harbor` Skill |
+| Evaluation runtime | Portable CPython 3.12 with the committed `harbor-dsh-evolution==0.7.2` source snapshot and Harbor |
 | Product data | An isolated `DSH_HOME` and a default XiaoHui workspace |
 
 First launch does not contact npm or a Node mirror: XiaoHui verifies and expands its bundled Node/pnpm and dependency-store archives, then performs a frozen offline install. Harbor Jobs still require Docker to be installed and running. Codex Auth requires the official `codex` CLI and its local ChatGPT login; it reads the CLI-owned login state on the Host and never copies tokens into browser settings. Harbor freezes the current Agent model before a Job and lets the isolated Candidate call that same Host model through a Job-scoped broker, so the default GPT Auth path needs no separate DeepSeek credential. The Candidate receives a short-lived broker capability, not the reusable Codex OAuth token. DeepSeek API credentials remain available for explicitly selected DeepSeek models and are configured inside the workbench, never committed to this repository. The Codex Auth and Better Sidebar snapshots carry recorded peer-metadata compatibility patches for Harness `0.1.1-rc.1`; their executable code is unchanged from the published tarballs.

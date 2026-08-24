@@ -63,6 +63,7 @@ pub fn build_wsl_web_command(spec: &WslLaunchSpec) -> Result<WslCommand, String>
     args.push(spec.linux_node.clone());
     args.push(spec.linux_cli.clone());
     args.push("web".into());
+    args.push("--no-open".into());
 
     if let Some(patch) = &spec.linux_patch {
         args.push("--patch".into());
@@ -123,6 +124,7 @@ mod tests {
             "/home/u/.local/share/dsh-desktop/runtime/node/bin/node".to_string(),
             "/home/u/.local/share/dsh-desktop/harness-versions/abc/apps/cli/lib/bin.js".to_string(),
             "web".to_string(),
+            "--no-open".to_string(),
             "--patch".to_string(),
             "/home/u/.dsh/desktop-overlay/cordis.yml".to_string(),
             "--host".to_string(),

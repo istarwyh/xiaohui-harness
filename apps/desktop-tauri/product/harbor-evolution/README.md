@@ -16,10 +16,10 @@ npx --yes dsh-harbor-evolution@latest setup --project-root "$PWD"
 
 The setup command installs both required runtimes:
 
-- `harbor-dsh-evolution==0.7.1` in a managed Python environment.
-- `dsh-harbor-evolution@0.7.1` in the selected DSH profile.
+- `harbor-dsh-evolution==0.7.2` in a managed Python environment.
+- `dsh-harbor-evolution@0.7.2` in the selected DSH profile.
 
-It then stores the absolute Harbor executable paths and `projectRoot` in the profile's `harbor-evolution` block and verifies the integration. Existing unrelated profile entries are preserved, and rerunning setup updates the same block.
+It then stores the absolute Harbor executable paths and a fallback `projectRoot` in the profile's `harbor-evolution` block and verifies the integration. Agent Tool calls always use the calling session's absolute working directory as their project root; the configured value remains the Web Workbench and non-Agent fallback. Existing unrelated profile entries are preserved, and rerunning setup updates the same block.
 
 The default profile is `web`. Use `--profile headless` only when that is the profile you actually run. See all options with:
 
@@ -81,7 +81,7 @@ The selected profile receives one id-targeted override:
     pythonPath: ""
 ```
 
-Keep `pythonPath` empty for the published Python package. `candidatePath`, `datasetPath`, `jobPath`, and `policyPath` are constrained to `projectRoot`.
+Keep `pythonPath` empty for the published Python package. For Agent Tool calls, `projectRoot` is replaced by the calling session's working directory for that call. `candidatePath`, `datasetPath`, `jobPath`, and `policyPath` remain constrained to that request-local root, so concurrent sessions cannot redirect each other's Harbor operations.
 
 For source development from the repository:
 

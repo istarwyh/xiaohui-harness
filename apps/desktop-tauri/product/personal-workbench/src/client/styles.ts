@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 
 const STYLE_ID = 'dsh-personal-workbench/settings'
 
-const CSS = `
+export const PERSONAL_WORKBENCH_CSS = `
 .dpw-card{display:grid;gap:16px;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:16px;background:var(--dsw-alias-bg-layer-1)}
 .dpw-heading{display:grid;gap:4px}.dpw-title{font-size:16px;font-weight:650;color:var(--dsw-alias-label-primary)}
 .dpw-description,.dpw-hint,.dpw-status{font-size:13px;line-height:1.5;color:var(--dsw-alias-label-secondary)}
@@ -16,7 +16,7 @@ const CSS = `
 .dpw-label{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}.dpw-input{box-sizing:border-box;width:100%;height:38px;padding:0 11px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit}
 .dpw-upload-row,.dpw-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dpw-file{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
 .dpw-button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 13px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer}
-.dpw-button-primary{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-brand-primary);color:white}.dpw-button:disabled{cursor:not-allowed;opacity:.5}
+.dpw-button-primary{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}.dpw-button-primary:hover:not(:disabled){border-color:var(--dsw-alias-button-primary-hover);background:var(--dsw-alias-button-primary-hover)}.dpw-button:disabled{cursor:not-allowed;opacity:.5}
 .dpw-error{font-size:13px;color:var(--dsw-alias-state-error-primary)}.dpw-success{color:var(--dsw-alias-state-success-primary)}
 @media (max-width:720px){.dpw-fields{grid-template-columns:1fr}}
 `
@@ -30,7 +30,7 @@ export function installPersonalWorkbenchStyles(ctx: Context): void {
     const style = document.createElement('style')
     style.dataset.plugin = 'dsh-personal-workbench'
     style.dataset.pluginCss = STYLE_ID
-    style.textContent = CSS
+    style.textContent = PERSONAL_WORKBENCH_CSS
     document.head.append(style)
     return () => { style.remove() }
   }, 'personal-workbench: settings styles')

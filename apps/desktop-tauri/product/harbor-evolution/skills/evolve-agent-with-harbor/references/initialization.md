@@ -13,7 +13,7 @@ Keep onboarding anchored on four visible concepts:
 | 评测器（评测标准） (Evaluator) | 怎样算好？ | evaluator curl/path, or natural-language criteria | Evaluator, Rubric, Judge identity, Evaluation Contract |
 | 优化器 (Optimizer) | 谁根据结果改进？ | current Agent, Codex, Claude Code, or local command | Optimizer identity, mutation surface, rollback workflow |
 
-Inspect first and prefill everything reliable. Ask only about missing rows. Use `./harbor-evolution/` as the proposed managed workspace when no project exists, but do not write outside the Plugin's configured `projectRoot`; surface a configuration mismatch before initialization.
+Inspect first and prefill everything reliable. Ask only about missing rows. Use `./harbor-evolution/` as the proposed managed workspace when no project exists. Agent-facing Harbor Tools resolve every path inside the calling session's working directory, so a different configured `projectRoot` is only a Web Workbench or non-Agent fallback and must not block initialization.
 
 Before any write, show the four rows plus inferred workspace, diagnostic/promotion scope, and deferred capabilities. The user may start initialization, modify the card, or open advanced configuration.
 

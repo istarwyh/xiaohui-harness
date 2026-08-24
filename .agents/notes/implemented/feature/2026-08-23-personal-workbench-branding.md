@@ -12,6 +12,8 @@ XiaoHui Harness ships as one opinionated workbench, but the visible identity is 
 
 The distribution includes `dsh-personal-workbench`, a product plugin with one General settings card. The card edits a workbench name and uploaded Logo, previews the draft, applies it to the sidebar and empty-conversation mark, and restores the XiaoHui fallback on request. Values persist in the current Profile's `personal-workbench` settings namespace.
 
+The card follows the shared theme's primary-button recipe: `--dsw-alias-button-primary-fill` supplies the surface and `--dsw-alias-label-primary-foreground` supplies its paired text. It never hardcodes a light foreground, because the primary fill becomes light in dark mode and dark in light mode.
+
 Custom presentation occupies only `sidebar.brand.name`, `sidebar.brand.mark`, and `conversation.hero.brand.mark`. Disabled or missing values register no occupant for that field, so the owning shell remains the fallback authority. Personal occupants use priority `-10` to shadow an existing brand occupant without modifying that package.
 
 ## Alternatives considered
@@ -26,4 +28,4 @@ Custom presentation occupies only `sidebar.brand.name`, `sidebar.brand.mark`, an
 
 Users can personalize the workbench from the running application and return to the distribution default without editing YAML. The feature adds one Profile namespace and three conditional slot occupants. It intentionally does not provide per-Workspace identities or broader skinning.
 
-The package is copied into the desktop's trimmed workspace, included in the CLI dependency closure, and activated by the desktop overlay. Focused tests pin settings defaults, apply/reset occupant lifecycle, bundle inclusion, and overlay activation.
+The package is copied into the desktop's trimmed workspace, included in the CLI dependency closure, and activated by the desktop overlay. Focused tests pin settings defaults, apply/reset occupant lifecycle, the theme-safe primary-button token pair, bundle inclusion, and overlay activation.

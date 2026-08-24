@@ -55,6 +55,9 @@ pub fn notification_overlay_yaml(plugin_url: &str) -> String {
 }
 
 /// Render the XiaoHui product and desktop-notification rows loaded after the web profile.
+///
+/// The configured project root backs the global Web Workbench. Agent Tool
+/// calls resolve a separate request-local root from their calling session.
 pub fn overlay_yaml(plugin_url: &str, product: &ProductRuntime) -> String {
     let project_root = serde_json::to_string(&product.project_root.display().to_string())
         .unwrap_or_else(|_| "\"\"".into());
@@ -175,7 +178,7 @@ mod tests {
             project_root: root.join("workspace"),
             harbor_bin: root.join("runtime").join("harbor"),
             harbor_dsh_bin: root.join("runtime").join("harbor-dsh"),
-            integration_version: "0.7.1".into(),
+            integration_version: "0.7.2".into(),
         }
     }
 
@@ -243,6 +246,7 @@ mod tests {
         assert!(yaml.contains("id: xiaohui-harbor-evolution"));
         assert!(yaml.contains("name: dsh-harbor-evolution"));
         assert!(yaml.contains("ctx.loader.entries()"));
+        assert!(yaml.contains("projectRoot: \"/tmp/xiaohui/workspace\""));
     }
 
     #[test]
