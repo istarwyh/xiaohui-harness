@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import { loadBundledSkill } from './lib/official-skill.js'
 import { CandidateModelRuntime } from './lib/model-runtime.js'
+import { RUNTIME_POLICY } from './lib/runtime-identity.js'
 import { EvolutionService } from './lib/service.js'
 import { installDashboardWeb } from './lib/web.js'
 
@@ -26,7 +27,6 @@ export const Config = Schema.object({
   jobsDir: Schema.string().default('jobs'),
   harborBin: Schema.string().default(''),
   harborDshBin: Schema.string().default(''),
-  dshVersion: Schema.string().default('0.1.0-rc.6'),
   agentImportPath: Schema.string().default('harbor_dsh_evolution.agent:DshCandidateAgent'),
   pluginImportPath: Schema.string().default('dsh-evolution'),
   pythonPath: Schema.string().default(''),
@@ -61,9 +61,16 @@ function toolProjectRoot(exec) {
   return path.resolve(cwd)
 }
 
+export function synchronizeWorkbenchProjectRoot(service, exec) {
+  const projectRoot = toolProjectRoot(exec)
+  service.activateProjectRoot(projectRoot, 'agent-session')
+  return projectRoot
+}
+
 export function apply(ctx, config) {
   const resolved = {
     ...config,
+    runtimePolicy: RUNTIME_POLICY,
     projectRoot: path.resolve(config.projectRoot),
     harborBin: config.harborBin || process.env.HARBOR_BIN || checkoutExecutable('harbor'),
     harborDshBin: config.harborDshBin || process.env.HARBOR_DSH_BIN || checkoutExecutable('harbor-dsh'),
@@ -74,12 +81,12 @@ export function apply(ctx, config) {
     ),
   }
   const modelRuntime = new CandidateModelRuntime(ctx, resolved)
-  const metadata = { pluginVersion: packageJson.version }
+  const metadata = { pluginVersion: packageJson.version, projectRootSource: 'configured' }
   const service = new EvolutionService(resolved, metadata, modelRuntime)
-  const serviceForTool = exec => new EvolutionService({
-    ...resolved,
-    projectRoot: toolProjectRoot(exec),
-  }, metadata, modelRuntime)
+  const serviceForTool = exec => {
+    const projectRoot = synchronizeWorkbenchProjectRoot(service, exec)
+    return new EvolutionService({ ...resolved, projectRoot }, metadata, modelRuntime)
+  }
 
   ctx.skills.register(loadBundledSkill())
   installDashboardWeb(ctx, service)
@@ -95,10 +102,17 @@ export function apply(ctx, config) {
   }, (args, exec) => serviceForTool(exec).snapshot(args)))
 
   ctx.tools.register(jsonTool({
+    name: 'harbor_model_binding',
+    description: 'Freeze the current DSH default provider, model, and reasoning identity into a non-secret model-binding.json draft. Runtime access still uses the short-lived Host Model Broker capability.',
+    parameters: {},
+  }, (_args, exec) => serviceForTool(exec).modelBinding()))
+
+  ctx.tools.register(jsonTool({
     name: 'harbor_evolution_init',
     description: 'Compile an accepted Dataset, Generator, Evaluator/criteria, and Optimizer onboarding card into a strict, non-overwriting Evaluation Stack project. Detailed identity fields are internal tool inputs, not a user questionnaire.',
     parameters: {
       datasetPath: { type: 'string', required: true },
+      workspaceSubdir: { type: 'string', description: 'Optional namespace under the current project root. Defaults to the project root; use it to host multiple independent Harbor projects.' },
       stackId: { type: 'string', required: true },
       stackVersion: { type: 'string', required: true },
       datasetId: { type: 'string', required: true },
@@ -130,6 +144,16 @@ export function apply(ctx, config) {
       candidateReasoningEffort: { type: 'string' },
     },
   }, (args, exec) => serviceForTool(exec).doctor(args)))
+
+  ctx.tools.register(jsonTool({
+    name: 'harbor_quick_diagnostic_init',
+    description: 'Create a non-overwriting Harbor 1.4 wiring diagnostic with one Query, a minimal Host-model Candidate, a runnable Task, and an explicit non-promotion Evaluator. The supplied Rubric is recorded as a draft but is not treated as executed.',
+    parameters: {
+      query: { type: 'string', required: true },
+      rubric: { type: 'string', required: true },
+      workspaceSubdir: { type: 'string', description: 'Defaults to harbor-diagnostic under the current Agent session directory.' },
+    },
+  }, (args, exec) => serviceForTool(exec).quickDiagnostic(args)))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_dataset_validate',
@@ -211,6 +235,7 @@ export function apply(ctx, config) {
     description: 'Create a non-overwriting Ground Truth draft for evaluator meta-evaluation. GT may be human, programmatic, consensus, model, or external, but must have explicit provenance and remain independent of the Candidate evaluator.',
     parameters: {
       outputPath: { type: 'string', description: 'Defaults to .harbor/ground-truth.json' },
+      evaluationRoot: { type: 'string', description: 'Optional evaluation workspace root used to register custom Ground Truth paths.' },
       groundTruthId: { type: 'string', required: true },
       version: { type: 'string', required: true },
       sourceKind: { type: 'string', required: true, description: 'human, programmatic, consensus, model, or external' },
@@ -227,6 +252,7 @@ export function apply(ctx, config) {
       groundTruthPath: { type: 'string', description: 'Defaults to .harbor/ground-truth.json' },
       observationsPath: { type: 'string', required: true },
       outputPath: { type: 'string', description: 'Defaults to .harbor/meta-evaluation-report.json' },
+      evaluationRoot: { type: 'string', description: 'Optional evaluation workspace root used to register custom report paths.' },
     },
   }, (args, exec) => serviceForTool(exec).evaluatorMetaEvaluate(args)))
 

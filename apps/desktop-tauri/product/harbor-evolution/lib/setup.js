@@ -5,14 +5,14 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 import { runProcess } from './process.js'
-
-export const DSH_VERSION = '0.1.0-rc.6'
+import { DSH_RUNTIME_VERSION } from './runtime-identity.js'
 
 const packageJson = JSON.parse(
   await readFile(new URL('../package.json', import.meta.url), 'utf8'),
 )
 
 export const INTEGRATION_VERSION = packageJson.version
+export const DSH_VERSION = DSH_RUNTIME_VERSION
 
 function requireValue(args, index, flag) {
   const value = args[index + 1]

@@ -8,6 +8,8 @@ export const COMPARE_ROUTE = '/_dsh/harbor-evolution/compare'
 export const GOVERNANCE_ROUTE = '/_dsh/harbor-evolution/governance'
 export const EVALUATOR_ROUTE = '/_dsh/harbor-evolution/evaluator'
 export const META_ROUTE = '/_dsh/harbor-evolution/meta'
+export const PROJECT_ROOT_ROUTE = '/_dsh/harbor-evolution/project-root'
+export const VERSION_ROUTE = '/_dsh/harbor-evolution/version'
 const MAX_MUTATION_BYTES = 256 * 1024
 
 function sendJson(response, status, body) {
@@ -64,7 +66,7 @@ export function createApiHandler(load, code = 'request-failed') {
 }
 
 export function createDashboardHandler(service) {
-  return createApiHandler(() => service.dashboard(), 'dashboard-unavailable')
+  return createApiHandler(args => service.dashboard(args), 'dashboard-unavailable')
 }
 
 export function createMutationHandler(update, code = 'update-failed') {
@@ -116,6 +118,8 @@ export function installDashboardWeb(ctx, service) {
       [GOVERNANCE_ROUTE, createApiHandler(args => service.governance(args), 'governance-unavailable')],
       [EVALUATOR_ROUTE, createMutationHandler(args => service.evaluator(args), 'evaluator-update-failed')],
       [META_ROUTE, createApiHandler(args => service.meta(args), 'meta-evaluation-unavailable')],
+      [VERSION_ROUTE, createApiHandler(args => service.version(args), 'version-check-unavailable')],
+      [PROJECT_ROOT_ROUTE, createMutationHandler(args => service.setProjectRoot(args), 'project-root-update-failed')],
     ]
     for (const [route, handler] of routes) {
       webCtx.effect(() => webCtx.webServer.register({ kind: 'exact', path: route, handler }), `harbor-evolution: ${route}`)

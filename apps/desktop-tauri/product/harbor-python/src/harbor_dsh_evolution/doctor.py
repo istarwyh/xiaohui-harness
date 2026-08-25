@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import hashlib
 import re
+import shutil
+import subprocess
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,143 @@ from harbor_dsh_evolution.promotion import load_policy
 from harbor_dsh_evolution.stack import validate_stack
 
 
+def _evaluator_artifact_findings(
+    dataset_root: Path,
+    dataset_manifest: dict[str, Any] | None,
+    stack: dict[str, Any],
+) -> list[dict[str, str]]:
+    interface = ((stack.get("components") or {}).get("evaluator") or {}).get("interface")
+    if not isinstance(interface, dict):
+        return []
+    findings: list[dict[str, str]] = []
+    for task in (dataset_manifest or {}).get("tasks") or []:
+        if not isinstance(task, dict) or not isinstance(task.get("path"), str):
+            continue
+        try:
+            task_root = resolve_inside(dataset_root, task["path"], label="task.path")
+        except (FileNotFoundError, ValueError):
+            continue
+        tests = task_root / "tests"
+        content = "\n".join(
+            path.read_text(errors="replace")
+            for path in tests.rglob("*")
+            if path.is_file() and not path.is_symlink() and path.stat().st_size <= 512_000
+        ) if tests.is_dir() else ""
+        if "evaluation-result.json" not in content:
+            findings.append(
+                {
+                    "level": "error",
+                    "code": "EVALUATOR_RESULT_OUTPUT_MISSING",
+                    "message": (
+                        f"Task {task.get('id') or task['path']} has a harbor-dsh-evaluator/v1 Stack "
+                        "but its verifier does not declare /logs/verifier/evaluation-result.json output. "
+                        "Write evaluation-result/v1 with a reason and recommendation for every Criterion."
+                    ),
+                }
+            )
+    return findings
+
+
+def _docker_runtime_findings(
+    dataset_root: Path,
+    dataset_manifest: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
+    docker = shutil.which("docker")
+    if not docker:
+        return [{
+            "level": "error",
+            "code": "DOCKER_UNAVAILABLE",
+            "message": "Docker CLI is not available; install/start Docker before running a Harbor Job.",
+        }]
+    try:
+        server = subprocess.run(
+            [docker, "version", "--format", "{{.Server.Version}}"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return [{
+            "level": "error",
+            "code": "DOCKER_DAEMON_UNAVAILABLE",
+            "message": f"Docker daemon preflight failed: {error}",
+        }]
+    if server.returncode != 0:
+        return [{
+            "level": "error",
+            "code": "DOCKER_DAEMON_UNAVAILABLE",
+            "message": "Docker CLI is installed but the daemon is unavailable; start Docker and retry.",
+        }]
+
+    docker_config = Path.home() / ".docker" / "config.json"
+    try:
+        configuration = json.loads(docker_config.read_text()) if docker_config.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        configuration = {}
+    credential_helpers = configuration.get("credHelpers")
+    helpers = {str(configuration.get("credsStore") or "")}
+    if isinstance(credential_helpers, dict):
+        helpers.update(str(value) for value in credential_helpers.values())
+    for helper in sorted(value for value in helpers if value):
+        executable = f"docker-credential-{helper}"
+        if shutil.which(executable) is None:
+            findings.append({
+                "level": "warning",
+                "code": "DOCKER_CREDENTIAL_HELPER_MISSING",
+                "message": (
+                    f"Docker config references {executable}, but it is not on PATH. "
+                    "Public image pulls may fail; repair the helper or use a verified local image."
+                ),
+            })
+
+    images: set[str] = set()
+    for task in (dataset_manifest or {}).get("tasks") or []:
+        if not isinstance(task, dict) or not isinstance(task.get("environment"), str):
+            continue
+        try:
+            dockerfile = resolve_inside(dataset_root, task["environment"], label="task.environment")
+            content = dockerfile.read_text(errors="replace")
+        except (FileNotFoundError, OSError, ValueError):
+            continue
+        match = re.search(r"(?im)^\s*FROM(?:\s+--platform=\S+)?\s+([^\s]+)", content)
+        if match and match.group(1).casefold() != "scratch" and "$" not in match.group(1):
+            images.add(match.group(1))
+        lowered = content.casefold()
+        missing = [name for name in ("python", "curl", "node") if name not in lowered]
+        if missing:
+            findings.append({
+                "level": "warning",
+                "code": "ACP_SETUP_READINESS_UNPROVEN",
+                "message": (
+                    f"Task {task.get('id') or task.get('path')} Dockerfile does not prove ACP runtime "
+                    f"dependencies ({', '.join(missing)}). If the base image does not preinstall them, Agent setup may time out."
+                ),
+            })
+    for image in sorted(images):
+        try:
+            inspected = subprocess.run(
+                [docker, "image", "inspect", image],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            inspected = None
+        if inspected is None or inspected.returncode != 0:
+            findings.append({
+                "level": "warning",
+                "code": "DOCKER_BASE_IMAGE_NOT_LOCAL",
+                "message": (
+                    f"Base image {image} is not present locally. Harbor will need to pull it; "
+                    "verify registry access and Docker credential helper availability first."
+                ),
+            })
+    return findings
+
+
 def architecture_doctor(
     *,
     project_root: Path,
@@ -21,15 +160,25 @@ def architecture_doctor(
     dataset_path: Path,
     candidate_path: Path | None = None,
     policy_path: Path | None = None,
+    runtime_checks: bool = False,
 ) -> dict[str, Any]:
     project_root = project_root.expanduser().resolve(strict=True)
     findings: list[dict[str, str]] = []
 
     stack = validate_stack(stack_path, project_root=project_root)
     findings.extend(stack["findings"])
+    if bool(((stack.get("stack") or {}).get("labels") or {}).get("diagnostic_only")):
+        findings.append({
+            "level": "error",
+            "code": "DIAGNOSTIC_ONLY_STACK",
+            "message": "This Stack is a wiring diagnostic and can never become promotion-ready; create a formal versioned Evaluator and Stack.",
+        })
     dataset = validate_dataset(dataset_path, project_root=project_root)
     findings.extend(dataset.findings)
     dataset_root = resolve_inside(project_root, dataset_path, label="dataset")
+    findings.extend(_evaluator_artifact_findings(dataset_root, dataset.manifest, stack))
+    if runtime_checks:
+        findings.extend(_docker_runtime_findings(dataset_root, dataset.manifest))
     duplicate_kinds = {
         "judge.py": ("DATASET_DUPLICATE_EVALUATOR", "Evaluator"),
         "Dockerfile": ("DATASET_DUPLICATE_ENVIRONMENT", "Environment"),

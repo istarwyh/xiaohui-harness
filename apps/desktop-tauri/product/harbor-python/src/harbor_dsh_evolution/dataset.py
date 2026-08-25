@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from harbor.models.task.task import Task
+
 from harbor_dsh_evolution.identity import public_relative, resolve_inside, tree_digest
 
 MANIFEST_NAME = "dataset-manifest.json"
@@ -36,19 +38,45 @@ def compute_dataset_digest(dataset_dir: Path) -> tuple[str, list[dict[str, Any]]
     )
 
 
+def runtime_task_directories(dataset_dir: Path) -> list[Path]:
+    """Return exactly the Task directories Harbor resolves for ``run -p``.
+
+    Harbor treats a local Dataset as a directory whose immediate children are
+    valid Tasks. A Task at the Dataset root or nested more than one level deep
+    is therefore not runnable through ``harbor run -p <dataset>``.
+    """
+    return [
+        child
+        for child in sorted(dataset_dir.iterdir())
+        if child.is_dir() and not child.is_symlink() and Task.is_valid_dir(child)
+    ]
+
+
 def _discover_tasks(dataset_dir: Path) -> list[dict[str, Any]]:
-    task_files = sorted(dataset_dir.rglob("task.toml"))
-    if not task_files and (dataset_dir / "instruction.md").is_file():
-        task_files = [dataset_dir / "task.toml"]
+    task_roots = runtime_task_directories(dataset_dir)
     tasks: list[dict[str, Any]] = []
-    for index, task_file in enumerate(task_files):
-        root = task_file.parent
+    for index, root in enumerate(task_roots):
+        task_file = root / "task.toml"
         relative = root.relative_to(dataset_dir).as_posix() or "."
         instruction = root / "instruction.md"
         try:
             configuration = tomllib.loads(task_file.read_text())
         except (OSError, tomllib.TOMLDecodeError):
             configuration = {}
+        task_config = configuration.get("task") if isinstance(configuration.get("task"), dict) else {}
+        task_name = task_config.get("name")
+        if configuration.get("schema_version") != "1.4":
+            raise ValueError(
+                f"HARBOR_TASK_SCHEMA_UNSUPPORTED: {relative}/task.toml must declare schema_version = \"1.4\""
+            )
+        if (
+            not isinstance(task_name, str)
+            or task_name.count("/") != 1
+            or any(not part.strip() for part in task_name.split("/"))
+        ):
+            raise ValueError(
+                f"HARBOR_TASK_NAME_INVALID: {relative}/task.toml [task].name must use org/name"
+            )
         metadata = configuration.get("metadata") if isinstance(configuration.get("metadata"), dict) else {}
         task = {
             "id": relative if relative != "." else f"task-{index + 1}",
@@ -80,7 +108,11 @@ def snapshot_dataset(
     digest, files = compute_dataset_digest(dataset_dir)
     tasks = _discover_tasks(dataset_dir)
     if not tasks:
-        raise ValueError("Dataset has no Harbor tasks (task.toml)")
+        raise ValueError(
+            "HARBOR_RUNTIME_NO_TASKS: Harbor resolves only valid Task directories "
+            "immediately below the Dataset root. Create <dataset>/<task>/task.toml, "
+            "instruction.md, environment/, and tests/test.sh using schema_version = \"1.4\"."
+        )
     manifest = {
         "schema_version": 1,
         "dataset_id": dataset_id or dataset_dir.name,
@@ -131,8 +163,18 @@ def validate_dataset(dataset_dir: Path, *, project_root: Path | None = None) -> 
     if manifest.get("task_count") != len(tasks):
         error("DATASET_TASK_COUNT_MISMATCH", "task_count does not match tasks")
 
+    runtime_roots = runtime_task_directories(dataset_dir)
+    runtime_paths = {root.relative_to(dataset_dir).as_posix() for root in runtime_roots}
+    if not runtime_paths:
+        error(
+            "HARBOR_RUNTIME_NO_TASKS",
+            "Harbor cannot resolve a Task from this Dataset. It only scans immediate child directories; "
+            "each Task needs task.toml, instruction.md, environment/, and tests/test.sh.",
+        )
+
     task_ids: set[str] = set()
     queries: set[str] = set()
+    manifest_paths: set[str] = set()
     for index, task in enumerate(tasks):
         if not isinstance(task, dict):
             error("DATASET_TASK_INVALID", f"Task {index} must be an object")
@@ -143,6 +185,14 @@ def validate_dataset(dataset_dir: Path, *, project_root: Path | None = None) -> 
         elif task_id in task_ids:
             error("DATASET_TASK_ID_DUPLICATE", f"Duplicate task id: {task_id}")
         task_ids.add(task_id)
+        task_path = task.get("path")
+        if isinstance(task_path, str) and task_path:
+            manifest_paths.add(task_path)
+            if task_path not in runtime_paths:
+                error(
+                    "HARBOR_RUNTIME_TASK_UNRESOLVED",
+                    f"Task {task_id or index} path {task_path!r} is not an immediate Harbor-runnable Task directory.",
+                )
         query = task.get("query")
         if isinstance(query, str) and query.strip():
             normalized = " ".join(query.split()).casefold()
@@ -168,6 +218,36 @@ def validate_dataset(dataset_dir: Path, *, project_root: Path | None = None) -> 
             leaked = forbidden.intersection(key.casefold() for key in metadata)
             if leaked:
                 error("DATASET_SENSITIVE_FIELD", f"Task {task_id or index} metadata contains sensitive fields")
+
+        if isinstance(task_path, str) and task_path in runtime_paths:
+            task_file = dataset_dir / task_path / "task.toml"
+            try:
+                configuration = tomllib.loads(task_file.read_text())
+            except (OSError, tomllib.TOMLDecodeError):
+                error("HARBOR_TASK_CONFIG_INVALID", f"Task {task_id or index} task.toml is invalid")
+                continue
+            if configuration.get("schema_version") != "1.4":
+                error(
+                    "HARBOR_TASK_SCHEMA_UNSUPPORTED",
+                    f"Task {task_id or index} must declare schema_version = \"1.4\".",
+                )
+            task_config = configuration.get("task") if isinstance(configuration.get("task"), dict) else {}
+            task_name = task_config.get("name")
+            if (
+                not isinstance(task_name, str)
+                or task_name.count("/") != 1
+                or any(not part.strip() for part in task_name.split("/"))
+            ):
+                error(
+                    "HARBOR_TASK_NAME_INVALID",
+                    f"Task {task_id or index} [task].name must use the org/name form.",
+                )
+
+    for runtime_path in sorted(runtime_paths - manifest_paths):
+        error(
+            "HARBOR_RUNTIME_TASK_NOT_MANIFESTED",
+            f"Harbor resolves Task {runtime_path!r}, but dataset-manifest.json does not include it.",
+        )
 
     actual_digest, files = compute_dataset_digest(dataset_dir)
     if manifest.get("source_digest") != actual_digest:

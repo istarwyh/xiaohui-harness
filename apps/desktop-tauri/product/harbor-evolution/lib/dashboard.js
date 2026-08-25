@@ -1,10 +1,12 @@
 import { access, constants, lstat, readdir, readFile, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { resolveWithin } from './evolution.js'
 
 const SUMMARY_NAME = 'evaluation-summary.json'
-const MAX_JOBS = 50
+const DEFAULT_JOB_PAGE_SIZE = 20
+const MAX_JOB_PAGE_SIZE = 100
 const MAX_JSON_BYTES = 2 * 1024 * 1024
 const MAX_SOURCE_BYTES = 128 * 1024
 const MAX_PREVIEW_BYTES = 512 * 1024
@@ -12,6 +14,11 @@ const MAX_TRIAL_LIMIT = 100
 const jsonCache = new Map()
 const SENSITIVE_KEY = /authorization|cookie|token|api[_-]?key|secret|password|request[_-]?headers/i
 const SENSITIVE_SOURCE_VALUE = /(authorization|cookie|token|api[_-]?key|secret|password)\s*[:=]\s*([^\s,;]+)/gi
+const WORKSPACE_SKIP_DIRECTORIES = new Set([
+  '.cache', '.git', '.harbor', '.next', '.venv', '__pycache__',
+  'build', 'candidates', 'coverage', 'datasets', 'dist', 'jobs', 'node_modules', 'public', 'vendor', 'venv',
+])
+const MAX_WORKSPACE_DEPTH = 5
 
 function safeSegment(value, label) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(String(value ?? ''))) throw new Error(`${label} is invalid`)
@@ -193,19 +200,96 @@ async function readJob(jobsDir, entry, details) {
   }
 }
 
-async function listJobs(jobsDir) {
+async function listJobs(jobsDir, { offset = 0, limit = DEFAULT_JOB_PAGE_SIZE } = {}) {
   let entries
   try {
     entries = await readdir(jobsDir, { withFileTypes: true })
   } catch (error) {
-    if (error.code === 'ENOENT') return []
+    if (error.code === 'ENOENT') return { items: [], total: 0, offset, limit, hasMore: false }
     throw error
   }
   const directories = entries.filter(entry => entry.isDirectory() && !entry.isSymbolicLink())
   const recent = await Promise.all(directories.map(async entry => ({ entry, details: await stat(path.join(jobsDir, entry.name)) })))
   recent.sort((left, right) => right.details.mtimeMs - left.details.mtimeMs)
-  const jobs = await Promise.all(recent.map(({ entry, details }) => readJob(jobsDir, entry, details)))
-  return jobs.filter(Boolean).slice(0, MAX_JOBS)
+  const page = recent.slice(offset, offset + limit)
+  const jobs = await Promise.all(page.map(({ entry, details }) => readJob(jobsDir, entry, details)))
+  return { items: jobs.filter(Boolean), total: recent.length, offset, limit, hasMore: offset + limit < recent.length }
+}
+
+function relativePath(root, value) {
+  return path.relative(root, value).split(path.sep).join('/') || '.'
+}
+
+function workspaceIdentity(projectRoot, workspaceRoot, jobsDir, preferred) {
+  const digest = createHash('sha256').update(`${projectRoot}\0${workspaceRoot}\0${jobsDir}`).digest('hex').slice(0, 12)
+  const label = String(preferred || path.basename(workspaceRoot) || 'root').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'root'
+  return `${label}-${digest}`
+}
+
+async function regularFile(pathname) {
+  try {
+    const details = await lstat(pathname)
+    return details.isFile() && !details.isSymbolicLink()
+  } catch (error) {
+    if (error.code === 'ENOENT') return false
+    throw error
+  }
+}
+
+/** Discover root and namespaced Harbor workspaces without interpreting YAML. */
+export async function discoverWorkspaceConfigs(config) {
+  const projectRoot = path.resolve(config.projectRoot)
+  const found = []
+  async function visit(directory, depth) {
+    const harborDirectory = path.join(directory, '.harbor')
+    const descriptorPath = path.join(harborDirectory, 'workspace.json')
+    const stackPath = path.join(harborDirectory, 'evaluation-stack.yml')
+    const descriptor = await readJson(descriptorPath)
+    if (descriptor?.schema_version === 1 && descriptor.jobs && descriptor.stack) {
+      const jobs = relativePath(projectRoot, resolveWithin(projectRoot, path.resolve(directory, descriptor.jobs), 'workspace.jobs'))
+      const stack = relativePath(projectRoot, resolveWithin(projectRoot, path.resolve(directory, descriptor.stack), 'workspace.stack'))
+      const workspaceRoot = relativePath(projectRoot, directory)
+      found.push({
+        ...config,
+        jobsDir: jobs,
+        stackPath: stack,
+        workspaceRoot,
+        workspaceLabel: descriptor.workspace_id ?? workspaceRoot,
+        workspaceId: workspaceIdentity(projectRoot, directory, jobs, descriptor.workspace_id),
+      })
+    } else if (await regularFile(stackPath)) {
+      const workspaceRoot = relativePath(projectRoot, directory)
+      const jobs = relativePath(projectRoot, path.join(directory, 'jobs'))
+      found.push({
+        ...config,
+        jobsDir: jobs,
+        stackPath: relativePath(projectRoot, stackPath),
+        workspaceRoot,
+        workspaceLabel: workspaceRoot,
+        workspaceId: workspaceIdentity(projectRoot, directory, jobs, workspaceRoot),
+      })
+    }
+    if (depth >= MAX_WORKSPACE_DEPTH) return
+    let entries
+    try { entries = await readdir(directory, { withFileTypes: true }) } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'EACCES') return
+      throw error
+    }
+    await Promise.all(entries
+      .filter(entry => entry.isDirectory() && !entry.isSymbolicLink() && !WORKSPACE_SKIP_DIRECTORIES.has(entry.name))
+      .map(entry => visit(path.join(directory, entry.name), depth + 1)))
+  }
+  await visit(projectRoot, 0)
+  if (!found.some(item => item.workspaceRoot === '.')) {
+    found.unshift({
+      ...config,
+      stackPath: '.harbor/evaluation-stack.yml',
+      workspaceRoot: '.',
+      workspaceLabel: path.basename(projectRoot) || 'root',
+      workspaceId: workspaceIdentity(projectRoot, projectRoot, config.jobsDir, path.basename(projectRoot)),
+    })
+  }
+  return found.sort((left, right) => left.workspaceRoot.localeCompare(right.workspaceRoot))
 }
 
 function jobsDirectory(config) {
@@ -216,32 +300,39 @@ function jobDirectory(config, job) {
   return path.join(jobsDirectory(config), safeSegment(job, 'job'))
 }
 
-export async function readDashboardSnapshot(config, metadata = {}) {
+export async function readDashboardSnapshot(config, metadata = {}, args = {}) {
   const projectRoot = path.resolve(config.projectRoot)
   const jobsDir = jobsDirectory(config)
-  const [jobs, projectRootCheck, jobsDirCheck, harborCheck, harborDshCheck, stackCheck] = await Promise.all([
-    listJobs(jobsDir),
+  const offset = Math.max(0, Number.parseInt(args.offset ?? 0, 10) || 0)
+  const limit = Math.min(MAX_JOB_PAGE_SIZE, Math.max(1, Number.parseInt(args.limit ?? DEFAULT_JOB_PAGE_SIZE, 10) || DEFAULT_JOB_PAGE_SIZE))
+  const [jobPage, projectRootCheck, jobsDirCheck, harborCheck, harborDshCheck, stackCheck] = await Promise.all([
+    listJobs(jobsDir, { offset, limit }),
     directoryCheck(projectRoot),
     directoryCheck(jobsDir, { optional: true }),
     executableCheck(config.harborBin),
     executableCheck(config.harborDshBin),
-    fileCheck(path.join(projectRoot, '.harbor', 'evaluation-stack.yml')),
+    fileCheck(resolveWithin(projectRoot, config.stackPath ?? '.harbor/evaluation-stack.yml', 'stackPath')),
   ])
+  const jobs = jobPage.items
   const counts = jobs.reduce((result, job) => ({ ...result, [job.status]: (result[job.status] ?? 0) + 1 }), {})
   const latestMetric = jobs.find(job => job.primaryMetric)?.primaryMetric
   return {
     schemaVersion: 3,
     generatedAt: new Date().toISOString(),
     pluginVersion: metadata.pluginVersion ?? 'development',
-    config: { jobsDir: config.jobsDir, dshVersion: config.dshVersion, agentImportPath: config.agentImportPath, pluginImportPath: config.pluginImportPath },
+    workspace: { id: config.workspaceId, label: config.workspaceLabel, root: config.workspaceRoot ?? '.', stackPath: config.stackPath },
+    workspaces: metadata.workspaces ?? [],
+    config: { projectRoot, projectRootSource: metadata.projectRootSource ?? 'configured', jobsDir: config.jobsDir, runtimePolicy: config.runtimePolicy ?? 'follow-latest', agentImportPath: config.agentImportPath, pluginImportPath: config.pluginImportPath },
     checks: { projectRoot: projectRootCheck, jobsDir: jobsDirCheck, harbor: harborCheck, harborDsh: harborDshCheck, evaluationStack: stackCheck },
     overview: {
-      totalJobs: jobs.length,
+      totalJobs: jobPage.total,
+      visibleJobs: jobs.length,
       completedJobs: (counts.completed ?? 0) + (counts.partial ?? 0) + (counts.attention ?? 0),
       activeJobs: (counts.pending ?? 0) + (counts.running ?? 0),
       failedJobs: counts.failed ?? 0,
       latestMetric,
     },
+    jobPagination: { offset: jobPage.offset, limit: jobPage.limit, total: jobPage.total, hasMore: jobPage.hasMore },
     jobs,
   }
 }
@@ -252,6 +343,7 @@ const DETAIL_ARTIFACTS = {
   dataset: 'dataset-manifest.json',
   datasetPreview: 'dataset-preview.json',
   stack: 'evaluation-stack-manifest.json',
+  stackSources: 'evaluation-stack-sources.json',
   context: 'evaluation-context.json',
   contract: 'evaluation-contract.json',
   doctor: 'architecture-doctor.json',
@@ -268,13 +360,13 @@ function schemaIssue(key, value) {
   if (value?.__readError) return value.__readError
   if (!isObject(value)) return 'artifact must be an object'
   const versions = {
-    summary: [2, 3], candidate: [1], dataset: [1], datasetPreview: [1], stack: [1], context: [1, 2], contract: [1],
+    summary: [2, 3], candidate: [1], dataset: [1], datasetPreview: [1], stack: [1], stackSources: [1], context: [1, 2], contract: [1],
     doctor: [1], population: [1, 2], lifecycle: [1], registry: [1], diagnosis: [1], optimization: [1, 2], promotion: [2],
   }[key]
   if (versions && !versions.includes(value.schema_version)) return `schema_version must be one of ${versions.join(', ')}`
   const required = {
     summary: ['job', 'metrics'], candidate: ['candidate_id', 'version', 'digest'], dataset: ['dataset_id', 'version', 'source_digest', 'tasks'], datasetPreview: ['dataset_id', 'version', 'source_digest', 'tasks'],
-    stack: ['stack_id', 'version', 'digest', 'components', 'judge'], context: ['digest'], contract: ['contract_id', 'version', 'primary_metric', 'metrics'],
+    stack: ['stack_id', 'version', 'digest', 'components', 'judge'], stackSources: ['stack_digest', 'components'], context: ['digest'], contract: ['contract_id', 'version', 'primary_metric', 'metrics'],
     doctor: ['promotion_ready', 'findings'], population: ['population_size', 'groups', 'metrics'], lifecycle: ['dataset_total', 'trials'],
     registry: ['artifacts'], diagnosis: ['diagnoses'], optimization: ['hypotheses'], promotion: ['decision', 'reasons', 'policy_digest'],
   }[key] ?? []
@@ -574,11 +666,22 @@ export async function readJobProgress(config, args) {
 
 export async function readMetaEvaluation(config, args = {}) {
   const evaluationRoot = resolveWithin(config.projectRoot, args.evaluationRoot ?? '.', 'evaluationRoot')
-  const groundTruth = await readJson(path.join(evaluationRoot, '.harbor', 'ground-truth.json'), { maxText: 64_000 })
-  const report = await readJson(path.join(evaluationRoot, '.harbor', 'meta-evaluation-report.json'), { maxText: 64_000 })
+  const index = await readJson(path.join(evaluationRoot, '.harbor', 'meta-artifacts.json'))
+  const registered = index?.schema_version === 1 ? index.artifacts ?? {} : {}
+  const groundTruthPath = resolveWithin(evaluationRoot, registered.ground_truth ?? '.harbor/ground-truth.json', 'groundTruthPath')
+  const reportPath = resolveWithin(evaluationRoot, registered.meta_evaluation_report ?? '.harbor/meta-evaluation-report.json', 'metaEvaluationReportPath')
+  const groundTruth = await readJson(groundTruthPath, { maxText: 64_000 })
+  const report = await readJson(reportPath, { maxText: 64_000 })
   const availableGroundTruth = groundTruth && !groundTruth.__readError
   const availableReport = report && !report.__readError
   const cases = availableGroundTruth && Array.isArray(groundTruth.cases) ? groundTruth.cases : []
+  const disagreementOffset = Math.max(0, Number.parseInt(args.offset ?? 0, 10) || 0)
+  const disagreementLimit = Math.min(100, Math.max(1, Number.parseInt(args.limit ?? 20, 10) || 20))
+  const disagreements = availableReport && Array.isArray(report.disagreements) ? report.disagreements : []
+  const pagedReport = availableReport ? {
+    ...report,
+    disagreements: disagreements.slice(disagreementOffset, disagreementOffset + disagreementLimit),
+  } : undefined
   return {
     schemaVersion: 1,
     evaluationRoot: path.relative(config.projectRoot, evaluationRoot) || '.',
@@ -590,9 +693,16 @@ export async function readMetaEvaluation(config, args = {}) {
       criteria: groundTruth.criteria ?? [],
       caseCount: cases.length,
       badcaseCount: cases.filter(item => item?.badcase).length,
-      path: path.relative(config.projectRoot, path.join(evaluationRoot, '.harbor', 'ground-truth.json')),
+      path: path.relative(config.projectRoot, groundTruthPath),
     } : undefined,
-    report: availableReport ? report : undefined,
+    report: pagedReport,
+    artifactIndex: index?.schema_version === 1 ? path.relative(config.projectRoot, path.join(evaluationRoot, '.harbor', 'meta-artifacts.json')) : undefined,
+    disagreementPagination: {
+      offset: disagreementOffset,
+      limit: disagreementLimit,
+      total: disagreements.length,
+      hasMore: disagreementOffset + disagreementLimit < disagreements.length,
+    },
     workflow: {
       candidate: 'Evaluator / Rubric / Judge identity',
       dataset: 'Fixed artifacts plus independent Ground Truth',
@@ -668,16 +778,27 @@ export async function readComparison(config, args) {
 export async function readEvaluatorGovernance(config, args) {
   const job = safeSegment(args.job, 'job')
   const directory = jobDirectory(config, job)
-  const [stack, contract, context] = await Promise.all([
+  const [stack, sources, contract, context] = await Promise.all([
     readJson(path.join(directory, 'evaluation-stack-manifest.json')),
+    readJson(path.join(directory, 'evaluation-stack-sources.json'), { maxText: MAX_SOURCE_BYTES }),
     readJson(path.join(directory, 'evaluation-contract.json')),
     readJson(path.join(directory, 'evaluation-context.json')),
   ])
   if (!stack || stack.__readError) throw new Error('Evaluation Stack is unavailable')
+  const historicalSources = sources?.schema_version === 1 && sources.stack_digest === stack.digest
+    ? sources
+    : undefined
   const components = {}
   for (const [role, component] of Object.entries(stack.components ?? {})) {
     const entry = component?.entry
-    const source = entry ? await readSafeText(resolveWithin(config.projectRoot, entry, `${role}.entry`), config.projectRoot) : { error: 'entry unavailable' }
+    const snapshot = historicalSources?.components?.[role]
+    const snapshotFile = snapshot?.files?.find(item => item.path === entry && item.text)
+      ?? snapshot?.files?.find(item => item.text)
+    const source = snapshotFile
+      ? { ...snapshotFile, source: 'job-snapshot', readOnly: true }
+      : entry
+        ? { ...(await readSafeText(resolveWithin(config.projectRoot, entry, `${role}.entry`), config.projectRoot)), source: 'historical-live-fallback', readOnly: true }
+        : { error: 'entry unavailable', source: 'unavailable', readOnly: true }
     components[role] = { ...component, source }
   }
   let comparison
@@ -697,7 +818,7 @@ export async function readEvaluatorGovernance(config, args) {
     }
   }
   return {
-    schemaVersion: 1, job, stackIdentity: { id: stack.stack_id, version: stack.version, digest: stack.digest },
+    schemaVersion: 1, job, stackIdentity: { id: stack.stack_id, version: stack.version, digest: stack.digest, comparisonDigest: stack.comparison_digest },
     judge: stack.judge, contract, contextDigest: context?.digest, components, comparison,
     editingPolicy: {
       browserWriteEnabled: false,

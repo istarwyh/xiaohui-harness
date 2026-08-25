@@ -33,6 +33,12 @@ def evaluate_promotion(
         if not any(item["code"] == code for item in reasons):
             reasons.append({"code": code, "message": message})
 
+    if policy.get("diagnostic_only") is True:
+        reject(
+            "DIAGNOSTIC_ONLY_POLICY",
+            "A quick diagnostic Policy cannot promote a Candidate; create an accepted formal Promotion Policy.",
+        )
+
     baseline_candidate = baseline.get("candidate") or {}
     candidate_identity = candidate.get("candidate") or {}
     if baseline_candidate.get("candidate_id") != candidate_identity.get("candidate_id"):

@@ -36,13 +36,58 @@
     },
     {
       "id": 4,
-      "prompt": "当前 Session 工作目录是 /Users/mac/Documents/Harness，但 Harbor Plugin 配置里显示的 projectRoot 是 /Users/mac/Library/Application Support/XiaoHui Harness/workspace。请在当前项目下初始化 ./harbor-evolution。",
-      "expected_output": "把当前 Session 工作目录作为 Agent Tool 的项目根目录，继续准备 /Users/mac/Documents/Harness/harbor-evolution 的初始化确认卡；说明配置值只供 Web Workbench 或非 Agent 场景回退使用，不要求修改配置，也不因路径不同而拒绝初始化。",
+      "prompt": "当前 Session 工作目录是 /workspace/business-agent，但 Harbor Plugin 配置里显示的 projectRoot 是 /workspace/default。请在当前项目下初始化 ./harbor-evolution。",
+      "expected_output": "把当前 Session 工作目录作为 Agent Tool 的项目根目录，继续准备 /workspace/business-agent/harbor-evolution 的初始化确认卡；说明配置值只供 Web Workbench 或非 Agent 场景回退使用，不要求修改配置，也不因路径不同而拒绝初始化。",
       "files": [],
       "assertions": [
         "The response treats the calling session working directory as the Agent Tool project root.",
         "The response does not block initialization or require a projectRoot configuration change because the fallback differs.",
-        "The proposed managed workspace stays under /Users/mac/Documents/Harness."
+        "The proposed managed workspace stays under /workspace/business-agent."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "生成器用本机 DSH Agent，我希望它固定使用当前 Harbor Agent 的 GPT Auth 模型，不要把登录信息放进 Candidate。",
+      "expected_output": "把同模型解释为固定的 Candidate model binding；确认后调用 harbor_model_binding 取得非敏感 provider/model/reasoning，写入 model-binding.json，并说明运行仍通过短期 dsh-host-broker Capability，Host OAuth 文件不会进入容器或 Harbor 产物。",
+      "files": [],
+      "assertions": [
+        "The response offers the current Harbor Agent model as an explicit Generator choice and snapshots it instead of live-following later model changes.",
+        "The response keeps Host authentication outside the Candidate and uses the short-lived Host Model Broker capability.",
+        "The response requires a new Candidate identity instead of overriding a pinned model binding in place."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "我想提升 DeepResearch 的评测器。这里有一份 report.md，专家的评价是：基本回答了问题，但没有解释颜色和光的关系，回应问题 0.5；表达平淡、没有例子，有趣性 0.5；引用了不存在的资料，引用规范性 0。建议补充形成机制并核对所有引用。帮我做元评测。",
+      "expected_output": "读取报告和当前 Rubric，把专家自然语言评价解析为评分、原因与建议的简洁确认表，保留原始评价并标明哪些值是明确给出、推断或待确认；不要求用户编写 GT/Observation JSON，且说明单个样本只能用于诊断校准。",
+      "files": [],
+      "assertions": [
+        "The response accepts the report and natural-language review as the user-facing meta-evaluation input without requesting JSON schemas or protocol fields.",
+        "The response presents or proposes a compact confirmation of scores, reasons, recommendations, and extraction status while preserving the raw review as provenance.",
+        "The response classifies a single reviewed report as diagnostic evidence rather than sufficient evaluator promotion evidence."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "./reviewed-reports 里有十份报告和对应的专家评语，但有些评语只写了‘引用有问题’或者‘基本可用’，没有结构化分数。请用这些材料校准评测器。",
+      "expected_output": "先检查目录配对和当前 Rubric，根据评分标准形成带 explicit/inferred/unresolved 状态的草稿；只对有歧义的映射提出合并后的短问题，用户确认后再生成严格元评测数据，并建议保留未参与调优的一组报告验证泛化。",
+      "files": [],
+      "assertions": [
+        "The response inspects and pairs existing files before asking the user to transcribe their contents.",
+        "The response does not silently convert vague comments into confirmed scores and asks only targeted questions for inferred or unresolved mappings.",
+        "The response proposes a tuning versus untouched validation split in plain language and keeps labels hidden from the Candidate evaluator."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "这个 DeepResearch Job 已经跑完 10 个任务。回应问题大多是 1，但引用规范性有 6 个 0.5、2 个 0，低分主要出现在需要多来源交叉验证的问题。请基于整个评测集告诉我下一步最值得做什么，不要逐条复述。",
+      "expected_output": "读取全部 Trial 与产物后，归纳为评测集级整体结论：用受影响数量、评分维度和代表性样本支撑一条优先的 Candidate 优化建议，说明预期效果、保护指标、回归验证和回滚条件；不把建议写成新的 Evaluator 分数或直接执行改动。",
+      "files": [],
+      "assertions": [
+        "The response synthesizes one Dataset-level conclusion from all Trial pages instead of repeating Trial recommendations or relying on selected badcases.",
+        "The response quantifies the recurring citation weakness and cites representative Trial evidence before assigning it to the Candidate.",
+        "The response proposes one specific controlled optimization with expected metric effect, protected metrics, comparable regression validation, and a rollback condition.",
+        "The response treats the synthesis as non-reward Optimizer guidance and does not mutate the Candidate or claim promotion without user approval."
       ]
     }
   ]

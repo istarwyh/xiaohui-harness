@@ -693,6 +693,7 @@ def _registry(job_dir: Path, assessment_paths: list[Path]) -> dict[str, Any]:
         ("dataset", "Dataset Manifest", "dataset-manifest.json", 1, False),
         ("dataset", "Dataset Preview", "dataset-preview.json", 1, False),
         ("evaluation-stack", "Evaluation Stack", "evaluation-stack-manifest.json", 1, True),
+        ("evaluation-stack", "Evaluation Stack Sources", "evaluation-stack-sources.json", 1, False),
         ("evaluation-stack", "Evaluation Context", "evaluation-context.json", 2, True),
         ("evaluation-stack", "Evaluation Contract", "evaluation-contract.json", 1, True),
         ("reporter", "Population Report", "population-report.json", 2, False),
@@ -814,6 +815,14 @@ def write_job_artifacts(
     )
     _write_json(job_dir / "artifact-registry.json", _registry(job_dir, assessment_paths))
     return validate_job_artifacts(job_dir, expected_trials=len(assessments))
+
+
+def load_trial_assessments(job_dir: Path) -> list[dict[str, Any]]:
+    """Load the canonical per-Trial validity decisions written for a Job."""
+    directory = job_dir / "trial-assessments"
+    if not directory.is_dir():
+        return []
+    return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))]
 
 
 def _validate_versioned(name: str, value: dict[str, Any]) -> list[str]:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,13 @@ from harbor_dsh_evolution.evaluator import load_evaluator_descriptor
 from harbor_dsh_evolution.identity import canonical_digest, public_relative, resolve_inside, tree_digest
 
 STACK_MANIFEST_NAME = "evaluation-stack-manifest.json"
+STACK_SOURCES_NAME = "evaluation-stack-sources.json"
+MAX_SOURCE_FILE_BYTES = 128 * 1024
+MAX_SOURCE_SNAPSHOT_BYTES = 2 * 1024 * 1024
+_SENSITIVE_SOURCE_VALUE = re.compile(
+    r"(authorization|cookie|token|api[_-]?key|secret|password)\s*[:=]\s*([^\s,;]+)",
+    re.IGNORECASE,
+)
 REQUIRED_ROLES = (
     "integration",
     "renderer",
@@ -209,3 +218,79 @@ def write_stack_manifest(manifest: dict[str, Any], output: Path) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     return output
+
+
+def snapshot_stack_sources(
+    manifest: dict[str, Any], *, project_root: Path
+) -> dict[str, Any]:
+    """Create a bounded, redacted display snapshot for historical Job review.
+
+    Component digests in the Stack manifest remain the comparison authority.
+    This artifact exists so the Workbench never has to pretend current checkout
+    files are the source that a historical Job actually evaluated.
+    """
+
+    project_root = project_root.expanduser().resolve(strict=True)
+    total_bytes = 0
+    components: dict[str, Any] = {}
+    for role, component in (manifest.get("components") or {}).items():
+        requested: list[str] = []
+        entry = component.get("entry")
+        if isinstance(entry, str) and entry:
+            requested.append(entry)
+        interface = component.get("interface") if role == "evaluator" else None
+        if isinstance(interface, dict):
+            descriptor_path = interface.get("descriptor_path")
+            if isinstance(descriptor_path, str) and descriptor_path:
+                requested.append(descriptor_path)
+            requested.extend(
+                item["path"]
+                for item in interface.get("editable_files") or []
+                if isinstance(item, dict) and isinstance(item.get("path"), str)
+            )
+
+        files: list[dict[str, Any]] = []
+        for relative in dict.fromkeys(requested):
+            try:
+                source = resolve_inside(project_root, relative, label=f"{role} source")
+                details = source.lstat()
+                if source.is_symlink() or not source.is_file():
+                    files.append({"path": relative, "error": "source is not a safe file"})
+                    continue
+                if details.st_size > MAX_SOURCE_FILE_BYTES:
+                    files.append(
+                        {
+                            "path": relative,
+                            "error": f"source exceeds {MAX_SOURCE_FILE_BYTES} bytes",
+                        }
+                    )
+                    continue
+                raw = source.read_text(errors="replace")
+                raw_bytes = len(raw.encode())
+                if total_bytes + raw_bytes > MAX_SOURCE_SNAPSHOT_BYTES:
+                    files.append({"path": relative, "error": "source snapshot budget exhausted"})
+                    continue
+                redacted = _SENSITIVE_SOURCE_VALUE.sub(r"\1=[REDACTED]", raw)
+                total_bytes += raw_bytes
+                files.append(
+                    {
+                        "path": relative,
+                        "digest": "sha256:" + hashlib.sha256(raw.encode()).hexdigest(),
+                        "text": redacted,
+                        "redacted": redacted != raw,
+                    }
+                )
+            except (FileNotFoundError, ValueError, OSError):
+                files.append({"path": relative, "error": "source is unavailable"})
+        components[role] = {"entry": entry, "files": files}
+
+    return {
+        "schema_version": 1,
+        "stack_digest": manifest.get("digest"),
+        "comparison_digest": manifest.get("comparison_digest"),
+        "components": components,
+        "limits": {
+            "max_file_bytes": MAX_SOURCE_FILE_BYTES,
+            "max_total_bytes": MAX_SOURCE_SNAPSHOT_BYTES,
+        },
+    }
