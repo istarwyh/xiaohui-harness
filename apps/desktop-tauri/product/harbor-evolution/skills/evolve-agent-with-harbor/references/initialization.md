@@ -9,13 +9,15 @@ Keep onboarding anchored on four visible concepts:
 | User concept | Plain-language prompt | Accepted input | Compiled architecture |
 | --- | --- | --- | --- |
 | 评测集 (Dataset) | 测什么？ | One Query, file, instruction directory, or Dataset | Dataset tasks, manifest, population, diagnostic/regression mode |
-| 生成器 (Generator) | 谁来回答？ | curl or local/detected Agent | Candidate snapshot, Integration, Renderer, runtime identity |
+| 生成器 (Generator) | 谁来回答？ | curl, local/detected Agent, or “使用当前 Harbor Agent 模型” | Candidate snapshot, Integration, Renderer, runtime identity, and optional pinned model binding |
 | 评测器（评测标准） (Evaluator) | 怎样算好？ | evaluator curl/path, or natural-language criteria | Evaluator, Rubric, Judge identity, Evaluation Contract |
 | 优化器 (Optimizer) | 谁根据结果改进？ | current Agent, Codex, Claude Code, or local command | Optimizer identity, mutation surface, rollback workflow |
 
 Inspect first and prefill everything reliable. Ask only about missing rows. Use `./harbor-evolution/` as the proposed managed workspace when no project exists. Agent-facing Harbor Tools resolve every path inside the calling session's working directory, so a different configured `projectRoot` is only a Web Workbench or non-Agent fallback and must not block initialization.
 
 Before any write, show the four rows plus inferred workspace, diagnostic/promotion scope, and deferred capabilities. The user may start initialization, modify the card, or open advanced configuration.
+
+When the accepted Generator is “使用当前 Harbor Agent 模型”, call `harbor_model_binding` after confirmation. Write the returned `candidate_model_binding` as `model-binding.json` before Candidate snapshot. The binding is immutable Candidate identity; runtime access still uses the per-Job Host Model Broker and its short-lived capability. Never write authentication material or a Host auth-file path into the Candidate directory.
 
 ## Internal compilation worksheet
 
@@ -24,6 +26,7 @@ The Agent, not the user, compiles the accepted concept card into the strict `har
 | Field | Required meaning |
 | --- | --- |
 | `datasetPath` | Existing Harbor Dataset inside `projectRoot` |
+| `workspaceSubdir` | Optional namespace for an independent Stack; use it when another Stack already owns the root `.harbor/` |
 | `stackId` / `stackVersion` | Stable identity of the complete evaluation architecture |
 | `datasetId` / `datasetVersion` | Stable identity of task population and GT boundary |
 | `contractId` / `contractVersion` | Stable metric semantics |
@@ -59,7 +62,7 @@ projectRoot/
 └── jobs/
 ```
 
-The initializer never overwrites existing files. `created` and `preserved` in its result are part of the audit. Placeholder components provide identities, not a finished business evaluator.
+The initializer never overwrites existing files. `created` and `preserved` in its result are part of the audit. If an existing Stack has a different id, initialization fails with `STACK_ALREADY_EXISTS_DIFFERENT_ID`; choose a separate `workspaceSubdir`. Placeholder components provide identities, not a finished business evaluator.
 
 ## Evaluation Stack shape
 
@@ -111,6 +114,10 @@ Keep `dataset-manifest.json` at Dataset root. Generate it through initialization
 - Missing/out-of-root paths or symlinks.
 - Source/file counts that no longer match.
 - Secret-bearing metadata fields.
+- A Task at the Dataset root, a deeply nested Task, or any manifest Task Harbor cannot resolve as an immediate child directory.
+- Missing Harbor 1.4 identity (`schema_version = "1.4"` and `[task].name = "org/name"`).
+
+When the user only needs a first wiring check, `harbor_quick_diagnostic_init` creates this standard structure plus a minimal Host-model Candidate. It is explicitly `promotion_eligible=false`: its verifier proves execution reached Harbor but does not apply the saved business Rubric draft.
 
 Intentional Dataset changes require a new Dataset version, a new snapshot, and a fresh baseline.
 

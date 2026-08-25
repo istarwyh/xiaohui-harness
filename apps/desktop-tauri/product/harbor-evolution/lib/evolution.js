@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { MANIFEST_NAME, snapshotCandidate } from './candidate.js'
@@ -8,9 +8,43 @@ export function resolveWithin(root, value, label) {
   const base = path.resolve(root)
   const resolved = path.resolve(base, value)
   if (resolved !== base && !resolved.startsWith(`${base}${path.sep}`)) {
-    throw new Error(`${label} must stay under projectRoot`)
+    throw new Error(
+      `PATH_OUTSIDE_PROJECT_ROOT: ${label} must stay under projectRoot.\n` +
+      `projectRoot: ${base}\n` +
+      `${label}: ${value}\n` +
+      'Recommended fix: use a path inside the current Agent session directory, or open the intended project as the session working directory. The Web Workbench projectRoot can be switched and reloaded in Harbor settings.',
+    )
   }
   return resolved
+}
+
+const META_ARTIFACT_INDEX = '.harbor/meta-artifacts.json'
+
+function inferEvaluationRoot(projectRoot, artifactPath, explicitRoot) {
+  if (explicitRoot) return resolveWithin(projectRoot, explicitRoot, 'evaluationRoot')
+  const relative = path.relative(projectRoot, artifactPath)
+  const parts = relative.split(path.sep)
+  const marker = parts.lastIndexOf('.harbor')
+  return marker >= 0 ? path.resolve(projectRoot, ...parts.slice(0, marker)) : path.resolve(projectRoot)
+}
+
+async function recordMetaArtifact(config, artifactPath, key, explicitRoot) {
+  const evaluationRoot = inferEvaluationRoot(config.projectRoot, artifactPath, explicitRoot)
+  const registeredArtifact = resolveWithin(evaluationRoot, artifactPath, key)
+  const indexPath = resolveWithin(evaluationRoot, META_ARTIFACT_INDEX, 'metaArtifactIndex')
+  let current = { schema_version: 1, artifacts: {} }
+  try {
+    const parsed = JSON.parse(await readFile(indexPath, 'utf8'))
+    if (parsed?.schema_version === 1 && parsed.artifacts && typeof parsed.artifacts === 'object') current = parsed
+  } catch (error) {
+    if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+  }
+  current.artifacts[key] = path.relative(evaluationRoot, registeredArtifact).split(path.sep).join('/')
+  await mkdir(path.dirname(indexPath), { recursive: true })
+  const temporary = `${indexPath}.${process.pid}.tmp`
+  await writeFile(temporary, `${JSON.stringify(current, null, 2)}\n`, 'utf8')
+  await rename(temporary, indexPath)
+  return path.relative(config.projectRoot, indexPath).split(path.sep).join('/')
 }
 
 export async function snapshot(config, args) {
@@ -18,7 +52,6 @@ export async function snapshot(config, args) {
   return snapshotCandidate(candidateDir, {
     candidateId: args.candidateId,
     version: args.version,
-    runtimeVersion: config.dshVersion,
   })
 }
 
@@ -80,7 +113,7 @@ export async function updateEvaluator(config, args) {
 
 export async function initializeGroundTruth(config, args) {
   const output = resolveWithin(config.projectRoot, args.outputPath ?? '.harbor/ground-truth.json', 'outputPath')
-  return cliJson(config, [
+  const result = await cliJson(config, [
     'ground-truth', 'init',
     '--project-root', config.projectRoot,
     '--output', output,
@@ -91,19 +124,25 @@ export async function initializeGroundTruth(config, args) {
     '--provenance', String(args.provenance ?? ''),
     '--criteria', String(args.criteria ?? ''),
   ])
+  result.artifact_index = await recordMetaArtifact(config, output, 'ground_truth', args.evaluationRoot)
+  return result
 }
 
 export async function runMetaEvaluation(config, args) {
   const groundTruth = resolveWithin(config.projectRoot, args.groundTruthPath ?? '.harbor/ground-truth.json', 'groundTruthPath')
   const observations = resolveWithin(config.projectRoot, args.observationsPath, 'observationsPath')
   const output = resolveWithin(config.projectRoot, args.outputPath ?? '.harbor/meta-evaluation-report.json', 'outputPath')
-  return cliJson(config, [
+  const result = await cliJson(config, [
     'meta-evaluate',
     '--project-root', config.projectRoot,
     '--ground-truth', groundTruth,
     '--observations', observations,
     '--output', output,
   ])
+  const evaluationRoot = args.evaluationRoot
+    ?? inferEvaluationRoot(config.projectRoot, groundTruth)
+  result.artifact_index = await recordMetaArtifact(config, output, 'meta_evaluation_report', evaluationRoot)
+  return result
 }
 
 function strictInputs(config, args) {
@@ -132,6 +171,63 @@ function candidateModelCliArgs(binding) {
   ]
 }
 
+export function redactDiagnostic(value) {
+  return String(value ?? '')
+    .replace(/(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s,'"}]+/gi, '$1[redacted]')
+    .replace(/(bearer\s+)[A-Za-z0-9._~+\/-]+/gi, '$1[redacted]')
+    .replace(/((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,'"}]+/gi, '$1[redacted]')
+}
+
+export function classifyHarborFailure(value) {
+  const text = String(value ?? '')
+  const suggestions = []
+  if (/AgentSetupTimeoutError|agent setup.{0,30}time(?:d out|out)/i.test(text)) {
+    suggestions.push({ code: 'AGENT_SETUP_TIMEOUT', action: 'Use a base image with Python, curl, Node.js, npm, and ACP/DSH dependencies already installed; then rerun Doctor.' })
+  }
+  if (/evaluation-result\.json is missing/i.test(text)) {
+    suggestions.push({ code: 'EVALUATOR_RESULT_MISSING', action: 'Update tests/test.sh or its evaluator script to write /logs/verifier/evaluation-result.json using evaluation-result/v1.' })
+  }
+  if (/Either datasets or tasks must be provided|HARBOR_RUNTIME_NO_TASKS/i.test(text)) {
+    suggestions.push({ code: 'DATASET_NOT_RESOLVED', action: 'Make the Dataset root contain immediate Task subdirectories with schema_version = "1.4", [task] name = "org/name", instruction.md, environment/, and tests/test.sh.' })
+  }
+  if (/docker-credential-|credential helper/i.test(text)) {
+    suggestions.push({ code: 'DOCKER_CREDENTIAL_HELPER', action: 'Repair the configured Docker credential helper or use a verified image already present in the local Docker daemon.' })
+  }
+  if (/Cannot connect to the Docker daemon|DOCKER_DAEMON_UNAVAILABLE/i.test(text)) {
+    suggestions.push({ code: 'DOCKER_DAEMON_UNAVAILABLE', action: 'Start Docker and confirm `docker version` can reach the server.' })
+  }
+  if (!suggestions.length) {
+    suggestions.push({ code: 'INSPECT_JOB_LOG', action: 'Review the stderr/job.log excerpt below, fix the first causal error, rerun Doctor, then retry the Job.' })
+  }
+  return suggestions
+}
+
+async function optionalTail(pathname, maxChars = 6000) {
+  try {
+    const value = await readFile(pathname, 'utf8')
+    return value.slice(-maxChars)
+  } catch {
+    return ''
+  }
+}
+
+export async function explainHarborFailure(error, jobDir) {
+  const stderr = error?.result?.stderr ?? ''
+  const stdout = error?.result?.stdout ?? ''
+  const logCandidates = ['job.log', 'harbor.log']
+  const logParts = (await Promise.all(logCandidates.map(name => optionalTail(path.join(jobDir, name)))))
+    .filter(Boolean)
+  const detail = redactDiagnostic([stderr.slice(-8000), ...logParts, stdout.slice(-2000)].filter(Boolean).join('\n'))
+  const suggestions = classifyHarborFailure(detail || error?.message)
+  const lines = [
+    `HARBOR_JOB_FAILED: Harbor exited with code ${error?.result?.code ?? 'unknown'}.`,
+    `jobPath: ${jobDir}`,
+    ...suggestions.map(item => `nextStep[${item.code}]: ${item.action}`),
+  ]
+  if (detail.trim()) lines.push('diagnosticTail:', detail.trim())
+  return new Error(lines.join('\n'))
+}
+
 export async function validateDataset(config, args) {
   const dataset = resolveWithin(config.projectRoot, args.datasetPath, 'datasetPath')
   return cliJson(config, ['dataset', 'validate', dataset, '--project-root', config.projectRoot], { allowedExitCodes: [0, 2] })
@@ -148,12 +244,23 @@ export async function initializeProject(config, args) {
     '--judge-provider', args.judgeProvider, '--judge-model', args.judgeModel, '--judge-version', args.judgeVersion,
     '--policy-id', args.policyId, '--policy-version', args.policyVersion,
     '--min-improvement', String(args.minImprovement),
+    '--workspace-subdir', String(args.workspaceSubdir ?? '.'),
+  ])
+}
+
+export async function initializeQuickDiagnostic(config, args) {
+  return cliJson(config, [
+    'quick', 'diagnostic',
+    '--project-root', config.projectRoot,
+    '--query', String(args.query ?? ''),
+    '--rubric', String(args.rubric ?? ''),
+    '--workspace-subdir', String(args.workspaceSubdir ?? 'harbor-diagnostic'),
   ])
 }
 
 export async function runDoctor(config, args) {
   const inputs = strictInputs(config, { ...args, mode: args.mode ?? 'diagnostic' })
-  const command = ['doctor', '--architecture', '--project-root', inputs.projectRoot, '--stack', inputs.stack, '--dataset', inputs.dataset]
+  const command = ['doctor', '--architecture', '--runtime', '--project-root', inputs.projectRoot, '--stack', inputs.stack, '--dataset', inputs.dataset]
   if (args.candidatePath) command.push('--candidate', inputs.candidate)
   if (inputs.policy) command.push('--policy', inputs.policy)
   return cliJson(config, command, { allowedExitCodes: [0, 2] })
@@ -180,9 +287,16 @@ export async function runEvaluation(config, args, modelRuntime) {
   const inputs = strictInputs(config, args)
   const datasetValidation = await validateDataset(config, args)
   if (!datasetValidation.valid) {
-    throw new Error(`Dataset validation failed: ${datasetValidation.findings.map(item => item.code).join(', ')}`)
+    throw new Error(
+      `Dataset validation failed under projectRoot ${inputs.projectRoot}:\n` +
+      datasetValidation.findings.map(item => `${item.code}: ${item.message}`).join('\n'),
+    )
   }
   const doctor = await runDoctor(config, args)
+  const runtimeBlockers = doctor.findings.filter(item => item.level === 'error' && item.code.startsWith('DOCKER_'))
+  if (runtimeBlockers.length) {
+    throw new Error(`Runtime Doctor blocked Harbor Job:\n${runtimeBlockers.map(item => `${item.code}: ${item.message}`).join('\n')}`)
+  }
   if (inputs.mode === 'promotion-eligible' && !doctor.promotion_ready) {
     throw new Error(`Architecture Doctor blocked promotion-eligible Job: ${doctor.findings.filter(item => item.level === 'error').map(item => item.code).join(', ')}`)
   }
@@ -226,20 +340,25 @@ export async function runEvaluation(config, args, modelRuntime) {
     jobName,
   })
   try {
-    const processResult = await runProcess(config.harborBin, harborArgs, {
-      cwd: config.projectRoot,
-      timeoutMs: config.timeoutMs,
-      env: {
-        ...process.env,
-        ...(config.pythonPath ? { PYTHONPATH: config.pythonPath } : {}),
-        HSE_MODEL_GATEWAY_URL: lease.endpoint,
-        HSE_MODEL_GATEWAY_TOKEN: lease.token,
-        HSE_MODEL_GATEWAY_PROVIDER: lease.candidateProvider,
-        HSE_MODEL_GATEWAY_INFO: JSON.stringify(lease.modelInfo),
-        HSE_MODEL_GATEWAY_PROTOCOL: lease.protocol,
-      },
-    })
     const jobDir = path.join(inputs.jobs, jobName)
+    let processResult
+    try {
+      processResult = await runProcess(config.harborBin, harborArgs, {
+        cwd: config.projectRoot,
+        timeoutMs: config.timeoutMs,
+        env: {
+          ...process.env,
+          ...(config.pythonPath ? { PYTHONPATH: config.pythonPath } : {}),
+          HSE_MODEL_GATEWAY_URL: lease.endpoint,
+          HSE_MODEL_GATEWAY_TOKEN: lease.token,
+          HSE_MODEL_GATEWAY_PROVIDER: lease.candidateProvider,
+          HSE_MODEL_GATEWAY_INFO: JSON.stringify(lease.modelInfo),
+          HSE_MODEL_GATEWAY_PROTOCOL: lease.protocol,
+        },
+      })
+    } catch (error) {
+      throw await explainHarborFailure(error, jobDir)
+    }
     const summary = JSON.parse(await readFile(path.join(jobDir, 'evaluation-summary.json'), 'utf8'))
     return {
       manifest,

@@ -4253,10 +4253,10 @@ importers:
   packages/product/harbor-evolution:
     dependencies:
       '@deepseek-ai/dsh-skill':
-        specifier: ^0.1.0-rc.6
+        specifier: '>=0.1.0-rc.6'
         version: 0.1.0-rc.8(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-invariants@packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-scope@packages+core+scope)
       '@deepseek-ai/dsh-tools':
-        specifier: ^0.1.0-rc.6
+        specifier: '>=0.1.0-rc.6'
         version: 0.1.0-rc.8(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-code-runtime@packages+code-runtime+code-runtime)(@deepseek-ai/dsh-invariants@packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-scope@packages+core+scope)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-system-prompt@packages+core+system-prompt)(@deepseek-ai/dsh-user-approval@packages+interaction+user-approval)
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery

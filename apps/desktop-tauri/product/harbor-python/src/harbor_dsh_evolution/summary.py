@@ -6,7 +6,11 @@ from pathlib import Path
 from statistics import mean
 from typing import Any, Iterable
 
-from harbor_dsh_evolution.artifacts import trial_assessment, validate_job_artifacts
+from harbor_dsh_evolution.artifacts import (
+    load_trial_assessments,
+    trial_assessment,
+    validate_job_artifacts,
+)
 from harbor_dsh_evolution.context import CONTEXT_NAME
 
 SUMMARY_NAME = "evaluation-summary.json"
@@ -30,7 +34,9 @@ def summarize_payloads(
     artifact_validation: dict[str, Any] | None = None,
     evaluation_contract: dict[str, Any] | None = None,
     dataset_manifest: dict[str, Any] | None = None,
+    assessments: Iterable[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    payloads = list(payloads)
     values: dict[str, list[float]] = defaultdict(list)
     exceptions: list[dict[str, str]] = []
     trials: list[dict[str, Any]] = []
@@ -45,12 +51,15 @@ def summarize_payloads(
         for task in (dataset_manifest or {}).get("tasks", [])
         if isinstance(task, dict) and task.get("id")
     }
-    for payload in payloads:
-        assessment = trial_assessment(
+    canonical_assessments = list(assessments) if assessments is not None else [
+        trial_assessment(
             payload,
             evaluation_contract=contract,
             task=task_lookup.get(str(payload.get("task_name"))) or {},
         )
+        for payload in payloads
+    ]
+    for assessment in canonical_assessments:
         statuses[assessment["status"]] += 1
         if assessment["score"]["valid"]:
             for key, value in assessment["raw_rewards"].items():
@@ -111,6 +120,7 @@ def summarize_job(job_dir: Path) -> dict[str, Any]:
     dataset_path = job_dir / "dataset-manifest.json"
     dataset_manifest = json.loads(dataset_path.read_text()) if dataset_path.exists() else None
     payloads = _trial_payloads(job_dir)
+    assessments = load_trial_assessments(job_dir)
     return summarize_payloads(
         payloads,
         job_name=job_dir.name,
@@ -119,6 +129,7 @@ def summarize_job(job_dir: Path) -> dict[str, Any]:
         artifact_validation=validate_job_artifacts(job_dir, expected_trials=len(payloads)),
         evaluation_contract=evaluation_contract,
         dataset_manifest=dataset_manifest,
+        assessments=assessments or None,
     )
 
 

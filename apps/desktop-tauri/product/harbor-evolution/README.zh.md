@@ -4,7 +4,7 @@
 
 这是一个可安装的 DeepSeek Harness 插件与 Skill，用于执行稳定的 Harbor 评测和受控的 Agent 演进，并在 DSH Web 中提供原生工作台。
 
-它为 DSH 提供十二个严格的 Harbor 工具、专用 Tool Card、九阶段 Evaluation Workbench、安装 Doctor，以及可由用户和模型调用的 `evolve-agent-with-harbor` Skill。Skill 从四个面向用户的概念开始——Dataset（测什么）、Generator（谁来回答）、Evaluator 及评测标准（什么算好）和 Optimizer（谁来改进）——再把已确认的选择编译为严格的 Evaluation Stack。它会验证 Dataset 身份、检查 Trial Lifecycle 与 Score Validity、管理独立的 Ground Truth 元评测、诊断证据来源，把每轮演进限制为一个受控 Candidate 变更，并且只在明确操作中调用 Promotion Gate。
+它为 DSH 提供十四个严格的 Harbor 工具、专用 Tool Card、九阶段 Evaluation Workbench、安装 Doctor，以及可由用户和模型调用的 `evolve-agent-with-harbor` Skill。Skill 从四个面向用户的概念开始——Dataset（测什么）、Generator（谁来回答）、Evaluator 及评测标准（什么算好）和 Optimizer（谁来改进）——再把已确认的选择编译为严格的 Evaluation Stack。DSH Generator 可以显式固定当前默认模型，作为不含密钥的 Candidate 身份，同时保留每个 Job 的 Host Broker 凭据边界。插件会验证 Dataset 身份、检查 Trial Lifecycle 与 Score Validity、管理独立的 Ground Truth 元评测、诊断证据来源，把每轮演进限制为一个受控 Candidate 变更，并且只在明确操作中调用 Promotion Gate。
 
 ## 安装
 
@@ -16,8 +16,8 @@ npx --yes dsh-harbor-evolution@latest setup --project-root "$PWD"
 
 Setup 命令会安装两个必需的运行时：
 
-- 在托管的 Python 环境中安装 `harbor-dsh-evolution==0.7.2`。
-- 在所选 DSH Profile 中安装 `dsh-harbor-evolution@0.7.2`。
+- 在托管的 Python 环境中安装 `harbor-dsh-evolution==0.7.3`。
+- 在所选 DSH Profile 中安装 `dsh-harbor-evolution@0.7.3`。
 
 随后，它会把 Harbor 可执行文件的绝对路径与一个回退 `projectRoot` 写入 Profile 的 `harbor-evolution` 配置块，并验证集成。Agent Tool 每次调用都会以当前 Session 的绝对工作目录作为项目根目录；配置值只供 Web Workbench 和非 Agent 场景回退使用。无关的 Profile 条目会被保留；重复执行只会更新同一个配置块。
 
@@ -39,6 +39,7 @@ Inspect this workspace and help me clarify and initialize a stable Harbor self-e
 插件注册：
 
 - `harbor_candidate_snapshot`
+- `harbor_model_binding`
 - `harbor_evolution_init`
 - `harbor_evolution_doctor`
 - `harbor_dataset_validate`
@@ -53,7 +54,7 @@ Inspect this workspace and help me clarify and initialize a stable Harbor self-e
 - 对 `script` 与 `llm-as-judge` 实现的 Evaluator/Rubric 源码进行 Descriptor 授权编辑，带乐观并发控制并强制使用新身份；
 - 由确定性脚本与 LLM-as-Judge 实现共享的 `harbor-dsh-evaluator/v1` 接口；
 - 所有 Harbor Tool 调用的紧凑结果卡片；
-- `Harbor Evolution` 设置区，用于检查配置的项目、Evaluation Stack、Jobs 目录和 CLI 路径。
+- `Harbor Evolution` 设置区，用于检查配置的项目、Evaluation Stack、Jobs 目录和 CLI 路径，支持进程内热重载 `projectRoot`，并从 npm 检查新的正式版本但不会静默安装。
 
 Web UI 有意保持只读。启动评测和决定晋级始终属于 Agent + Skill 的显式流程，因此页面刷新不会启动昂贵 Job。
 
@@ -64,6 +65,10 @@ Web UI 有意保持只读。启动评测和决定晋级始终属于 Agent + Skil
 每个 Job 启动前，插件会快照 DSH Agent 当前选择的 Provider、Model 和 Reasoning Effort，然后启动 Job 级本地 Model Broker。Candidate 通过 `dsh-host-broker` / `dsh-host-model-gateway/v1` 使用临时 `dsh-host` 适配器；它只会收到一个短期有效的 Job Capability 文件，不会收到 GPT Auth、Codex OAuth 或上游 API Key。
 
 `harbor_eval_run`、`harbor_context_preview` 和 `harbor_evolution_doctor` 默认继承这项选择。高级调用方只能成对覆盖 `candidateProvider` 和 `candidateModel`，并可选提供 `candidateReasoningEffort`。`openai-codex` 会在 Harbor 启动前检查 GPT Auth 登录状态。生成的模型绑定属于 Context v2 的比较身份，因此 Provider、Model 或 Reasoning 的任何变化都需要新的 Baseline。
+
+`harbor_model_binding` 会把当前默认选择返回为不含凭据的 `model-binding.json` 草稿。在 Candidate Snapshot 之前纳入该文件后，它会进入 Candidate Digest，并成为 Job 必须使用的模型身份。冲突的 Job 或 Plugin Override 会在 Harbor 启动前失败。即使使用 `openai-codex`，Candidate 也只会收到短期 Broker Capability，绝不会得到 Host OAuth 文件或上游 API Key。
+
+打开 Settings 时，Host 会执行有时限的 npm Registry 检查并缓存成功结果。发现新版本后只展示精确安装命令和 Release 链接；浏览器不会安装 Package、改写 DSH Profile 或重启 DSH，Registry 失败也不会阻塞工作台。
 
 `harbor_eval_result` 默认返回稳定的 Summary。可以使用 `view=job`、`view=dataset`、`view=progress`、`view=trial` 加返回的 `trialId`，或 `view=governance` 检查经过清理的指令、生成结果、证据与 Evaluator 源码，而不让 Agent 耦合产物文件路径。
 

@@ -50,9 +50,32 @@ def initialize_project(
     policy_id: str,
     policy_version: str,
     min_improvement: float,
+    workspace_subdir: str | Path = ".",
 ) -> dict[str, Any]:
     project_root = project_root.expanduser().resolve(strict=True)
     dataset_path = resolve_inside(project_root, dataset_path, label="dataset")
+    requested_workspace = Path(workspace_subdir).expanduser()
+    workspace_root = (
+        requested_workspace if requested_workspace.is_absolute() else project_root / requested_workspace
+    ).resolve()
+    if workspace_root != project_root and project_root not in workspace_root.parents:
+        raise ValueError(
+            "WORKSPACE_OUTSIDE_PROJECT_ROOT: workspace_subdir must stay under project_root"
+        )
+    stack_path = workspace_root / ".harbor" / "evaluation-stack.yml"
+    if stack_path.is_file():
+        try:
+            existing_stack = yaml.safe_load(stack_path.read_text())
+        except (OSError, yaml.YAMLError) as error:
+            raise ValueError(f"STACK_EXISTING_INVALID: {stack_path}: {error}") from error
+        existing_id = existing_stack.get("stack_id") if isinstance(existing_stack, dict) else None
+        if existing_id != stack_id:
+            raise ValueError(
+                "STACK_ALREADY_EXISTS_DIFFERENT_ID: "
+                f"{stack_path} contains stack_id={existing_id!r}, requested={stack_id!r}. "
+                "Choose a different --workspace-subdir (for example harbor-projects/<stack-id>) "
+                "or explicitly update the existing Stack instead of reinitializing it."
+            )
     if primary_direction not in {"maximize", "minimize"}:
         raise ValueError("primary_direction must be maximize or minimize")
     required = {
@@ -76,7 +99,7 @@ def initialize_project(
     created: list[str] = []
     existing: list[str] = []
     for directory in ("candidates", "datasets", "integrations", "renderers", "evaluators", "rubrics", "diagnosers", "optimizers", "reporters", "runners", "policies", "jobs", ".harbor"):
-        (project_root / directory).mkdir(exist_ok=True)
+        (workspace_root / directory).mkdir(parents=True, exist_ok=True)
 
     evaluator_id = f"{stack_id}-evaluator"
     evaluator_implementation = '''"""Implement harbor-dsh-evaluator/v1 for this business domain."""
@@ -95,7 +118,7 @@ def evaluate(payload):
         ],
     }
 '''
-    _write_new(project_root / "evaluators/default/evaluator.py", evaluator_implementation, created, existing, project_root)
+    _write_new(workspace_root / "evaluators/default/evaluator.py", evaluator_implementation, created, existing, project_root)
 
     for role, relative in ROLE_PATHS.items():
         if role == "rubric":
@@ -124,7 +147,7 @@ def evaluate(payload):
             content = '"""Harbor orchestration only. Keep HTTP, rubric, judge, and promotion outside this Runner."""\n\nROLE = "runner"\n'
         else:
             content = f'"""Replace with the project-specific {role} implementation."""\n\nROLE = "{role}"\n'
-        _write_new(project_root / relative, content, created, existing, project_root)
+        _write_new(workspace_root / relative, content, created, existing, project_root)
 
     if not (dataset_path / MANIFEST_NAME).exists():
         snapshot_dataset(dataset_path, dataset_id=dataset_id, version=dataset_version)
@@ -133,8 +156,13 @@ def evaluate(payload):
     if not validation.valid:
         raise ValueError("Dataset initialization failed validation: " + ", ".join(item["code"] for item in validation.findings))
 
+    workspace_relative = workspace_root.relative_to(project_root)
+    component_entries = {
+        role: (workspace_relative / relative).as_posix()
+        for role, relative in ROLE_PATHS.items()
+    }
     components = {
-        role: {"id": f"{stack_id}-{role}", "version": stack_version, "entry": relative, **({"semantic": False} if role == "runner" else {})}
+        role: {"id": f"{stack_id}-{role}", "version": stack_version, "entry": component_entries[role], **({"semantic": False} if role == "runner" else {})}
         for role, relative in ROLE_PATHS.items()
     }
     stack = {
@@ -163,17 +191,36 @@ def evaluate(payload):
         },
         "labels": {},
     }
-    _write_new(project_root / ".harbor/evaluation-stack.yml", yaml.safe_dump(stack, sort_keys=False, allow_unicode=True), created, existing, project_root)
+    _write_new(stack_path, yaml.safe_dump(stack, sort_keys=False, allow_unicode=True), created, existing, project_root)
     dataset_relative = dataset_path.relative_to(project_root).as_posix()
+    stack_relative = stack_path.relative_to(project_root).as_posix()
     evolution = {
         "schema_version": 1,
-        "stack": ".harbor/evaluation-stack.yml",
+        "stack": stack_relative,
         "dataset": dataset_relative,
+        "jobs": (workspace_relative / "jobs").as_posix(),
+        "promotion_policy": (workspace_relative / "policies/promotion.json").as_posix(),
+        "candidate_root": (workspace_relative / "candidates").as_posix(),
+    }
+    _write_new(workspace_root / ".harbor/evolution.yml", yaml.safe_dump(evolution, sort_keys=False), created, existing, project_root)
+    workspace_descriptor = {
+        "schema_version": 1,
+        "workspace_id": stack_id,
+        "path_base": "workspace",
+        "workspace_root": ".",
+        "stack": ".harbor/evaluation-stack.yml",
         "jobs": "jobs",
         "promotion_policy": "policies/promotion.json",
         "candidate_root": "candidates",
+        "meta_artifact_index": ".harbor/meta-artifacts.json",
     }
-    _write_new(project_root / ".harbor/evolution.yml", yaml.safe_dump(evolution, sort_keys=False), created, existing, project_root)
+    _write_new(
+        workspace_root / ".harbor/workspace.json",
+        json.dumps(workspace_descriptor, ensure_ascii=False, indent=2) + "\n",
+        created,
+        existing,
+        project_root,
+    )
     policy = {
         "schema_version": 2,
         "policy_id": policy_id,
@@ -188,10 +235,13 @@ def evaluate(payload):
         "non_regression_tolerance": 0,
         "hard_requirements": ["exception_free", "artifact_schema_valid", "doctor_error_free"],
     }
-    _write_new(project_root / "policies/promotion.json", json.dumps(policy, ensure_ascii=False, indent=2) + "\n", created, existing, project_root)
+    _write_new(workspace_root / "policies/promotion.json", json.dumps(policy, ensure_ascii=False, indent=2) + "\n", created, existing, project_root)
     return {
         "schema_version": 1,
         "initialized": True,
+        "project_root": str(project_root),
+        "workspace": workspace_relative.as_posix(),
+        "stack_path": stack_relative,
         "created": created,
         "preserved": existing,
         "dataset_validation": validation.to_dict(),

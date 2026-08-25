@@ -74,7 +74,25 @@ export class CandidateModelRuntime {
     this.config = config
   }
 
-  async resolve(args = {}) {
+  async currentBinding() {
+    const inherited = this.ctx.agentDefaultModel.currentSelection()
+    const binding = await this.resolve({
+      candidateProvider: inherited.provider,
+      candidateModel: inherited.model,
+      candidateReasoningEffort: inherited.reasoningEffort,
+    })
+    return {
+      schema_version: 1,
+      source: 'skill-agent-default',
+      provider: binding.provider,
+      model: binding.model,
+      ...(binding.reasoning_effort === undefined
+        ? {}
+        : { reasoning_effort: binding.reasoning_effort }),
+    }
+  }
+
+  async resolve(args = {}, pinnedBinding) {
     const explicitProvider = nonBlank(args.candidateProvider)
     const explicitModel = nonBlank(args.candidateModel)
     if (Boolean(explicitProvider) !== Boolean(explicitModel)) {
@@ -86,14 +104,37 @@ export class CandidateModelRuntime {
       throw new Error('Harbor candidateProvider and candidateModel configuration must be supplied together')
     }
 
+    const pinnedProvider = nonBlank(pinnedBinding?.provider)
+    const pinnedModel = nonBlank(pinnedBinding?.model)
+    if (Boolean(pinnedProvider) !== Boolean(pinnedModel)) {
+      throw new Error('Candidate model-binding.json requires provider and model')
+    }
+    const pinnedReasoning = nonBlank(pinnedBinding?.reasoning_effort)
+    if (pinnedProvider && explicitProvider && (
+      explicitProvider !== pinnedProvider
+      || explicitModel !== pinnedModel
+      || (nonBlank(args.candidateReasoningEffort) ?? undefined) !== pinnedReasoning
+    )) {
+      throw new Error('CANDIDATE_MODEL_BINDING_CONFLICT: explicit Job model arguments do not match model-binding.json; create a new Candidate for a different model identity')
+    }
+    if (pinnedProvider && configuredProvider && (
+      configuredProvider !== pinnedProvider
+      || configuredModel !== pinnedModel
+      || (nonBlank(this.config.candidateReasoningEffort) ?? undefined) !== pinnedReasoning
+    )) {
+      throw new Error('CANDIDATE_MODEL_BINDING_CONFLICT: Plugin model configuration does not match model-binding.json; create a new Candidate or remove the global override')
+    }
+
     const inherited = this.ctx.agentDefaultModel.currentSelection()
-    const provider = explicitProvider ?? configuredProvider ?? inherited.provider
-    const model = explicitModel ?? configuredModel ?? inherited.model
+    const provider = pinnedProvider ?? explicitProvider ?? configuredProvider ?? inherited.provider
+    const model = pinnedModel ?? explicitModel ?? configuredModel ?? inherited.model
     const explicitReasoning = nonBlank(args.candidateReasoningEffort)
     const configuredReasoning = nonBlank(this.config.candidateReasoningEffort)
     const canInheritReasoning = provider === inherited.provider && model === inherited.model
-    const reasoningEffort = explicitReasoning ?? configuredReasoning
-      ?? (canInheritReasoning ? inherited.reasoningEffort : undefined)
+    const reasoningEffort = pinnedProvider
+      ? pinnedReasoning
+      : explicitReasoning ?? configuredReasoning
+        ?? (canInheritReasoning ? inherited.reasoningEffort : undefined)
 
     if (!this.ctx.llm.listProviders().some(item => item.id === provider)) {
       throw new Error(`Candidate model provider "${provider}" is not registered in DeepSeek Harness`)

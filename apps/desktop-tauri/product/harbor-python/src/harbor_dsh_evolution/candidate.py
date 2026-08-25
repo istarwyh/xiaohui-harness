@@ -8,7 +8,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from harbor_dsh_evolution.runtime_identity import (
+    DEFAULT_CANDIDATE_ACP_PACKAGE,
+    DEFAULT_DSH_RUNTIME_VERSION,
+    RUNTIME_POLICY,
+)
+
 MANIFEST_NAME = "candidate-manifest.json"
+MODEL_BINDING_NAME = "model-binding.json"
 _DIGEST_PREFIX = b"harbor-dsh-candidate-v1\0"
 _EXCLUDED_DIRS = {".git", "node_modules", "__pycache__", ".harbor-runtime"}
 _EXCLUDED_FILES = {MANIFEST_NAME, ".DS_Store"}
@@ -22,6 +29,13 @@ _CREDENTIAL_FILES = {
     "secrets.yml",
     "id_rsa",
     "id_ed25519",
+}
+_MODEL_BINDING_KEYS = {
+    "schema_version",
+    "source",
+    "provider",
+    "model",
+    "reasoning_effort",
 }
 
 
@@ -68,6 +82,53 @@ class CandidateManifest:
             files=[CandidateFile(**item) for item in value["files"]],
             metadata=dict(value.get("metadata") or {}),
         )
+
+
+def load_model_binding(candidate_dir: Path) -> dict[str, Any] | None:
+    """Read the optional, non-secret model identity included in Candidate digest."""
+    path = candidate_dir / MODEL_BINDING_NAME
+    if not path.exists():
+        return None
+    try:
+        value = json.loads(path.read_text())
+    except json.JSONDecodeError as error:
+        raise ValueError(f"{MODEL_BINDING_NAME} is not valid JSON") from error
+    if not isinstance(value, dict):
+        raise ValueError(f"{MODEL_BINDING_NAME} must be an object")
+    unknown = sorted(set(value) - _MODEL_BINDING_KEYS)
+    if unknown:
+        raise ValueError(
+            f"{MODEL_BINDING_NAME} contains unsupported or secret-bearing fields: "
+            + ", ".join(unknown)
+        )
+    if value.get("schema_version") != 1:
+        raise ValueError(f"{MODEL_BINDING_NAME} requires schema_version=1")
+    required = ("source", "provider", "model")
+    if any(
+        not isinstance(value.get(key), str) or not value[key].strip()
+        for key in required
+    ):
+        raise ValueError(
+            f"{MODEL_BINDING_NAME} requires non-empty source, provider, and model"
+        )
+    reasoning_effort = value.get("reasoning_effort")
+    if reasoning_effort is not None and (
+        not isinstance(reasoning_effort, str) or not reasoning_effort.strip()
+    ):
+        raise ValueError(
+            f"{MODEL_BINDING_NAME} reasoning_effort must be a non-empty string when present"
+        )
+    return {
+        "schema_version": 1,
+        "source": value["source"].strip(),
+        "provider": value["provider"].strip(),
+        "model": value["model"].strip(),
+        **(
+            {"reasoning_effort": reasoning_effort.strip()}
+            if reasoning_effort
+            else {}
+        ),
+    }
 
 
 def _candidate_files(candidate_dir: Path) -> list[Path]:
@@ -135,6 +196,7 @@ def _validate_candidate_contract(candidate_dir: Path) -> None:
             + ", ".join(credential_paths)
             + "; inject credentials at runtime instead"
         )
+    load_model_binding(candidate_dir)
 
 
 def snapshot_candidate(
@@ -142,7 +204,6 @@ def snapshot_candidate(
     *,
     candidate_id: str | None = None,
     version: str | None = None,
-    runtime_version: str = "0.1.0-rc.6",
     metadata: dict[str, Any] | None = None,
 ) -> CandidateManifest:
     candidate_dir = candidate_dir.expanduser().resolve(strict=True)
@@ -156,13 +217,22 @@ def snapshot_candidate(
         candidate_id = str(package.get("name") or "")
     if version is None:
         version = str(package.get("version") or "")
-    if not candidate_id or not version or not runtime_version:
+    if not candidate_id or not version:
         raise ValueError(
-            "Candidate id, version, and runtime version must not be empty; "
+            "Candidate id and version must not be empty; "
             "set package.json name/version or pass explicit values"
         )
 
     digest, files = compute_candidate(candidate_dir)
+    resolved_metadata = dict(metadata or {})
+    model_binding = load_model_binding(candidate_dir)
+    if model_binding is not None:
+        existing_binding = resolved_metadata.get("model_binding")
+        if existing_binding is not None and existing_binding != model_binding:
+            raise ValueError(
+                "Candidate metadata model_binding must match model-binding.json"
+            )
+        resolved_metadata["model_binding"] = model_binding
     manifest = CandidateManifest(
         schema_version=1,
         candidate_id=candidate_id,
@@ -171,11 +241,13 @@ def snapshot_candidate(
         created_at=datetime.now(timezone.utc).isoformat(),
         runtime={
             "kind": "deepseek-harness",
-            "version": runtime_version,
+            "policy": RUNTIME_POLICY,
+            "version": DEFAULT_DSH_RUNTIME_VERSION,
+            "package": DEFAULT_CANDIDATE_ACP_PACKAGE,
             "transport": "acp",
         },
         files=files,
-        metadata=metadata or {},
+        metadata=resolved_metadata,
     )
     (candidate_dir / MANIFEST_NAME).write_text(
         json.dumps(manifest.to_dict(), ensure_ascii=False, indent=2) + "\n"

@@ -9,7 +9,7 @@ from harbor.models.job.plugin import BaseJobPlugin
 from harbor.models.job.result import JobResult
 from harbor.trial.hooks import TrialHookEvent
 
-from harbor_dsh_evolution.artifacts import write_job_artifacts
+from harbor_dsh_evolution.artifacts import load_trial_assessments, write_job_artifacts
 from harbor_dsh_evolution.candidate import CandidateManifest, verify_candidate
 from harbor_dsh_evolution.context import CONTEXT_NAME, build_evaluation_context
 from harbor_dsh_evolution.dataset import (
@@ -20,7 +20,12 @@ from harbor_dsh_evolution.dataset import (
 )
 from harbor_dsh_evolution.doctor import architecture_doctor
 from harbor_dsh_evolution.lifecycle import TrialLifecycleStore, terminal_phase
-from harbor_dsh_evolution.stack import STACK_MANIFEST_NAME, snapshot_stack
+from harbor_dsh_evolution.stack import (
+    STACK_MANIFEST_NAME,
+    STACK_SOURCES_NAME,
+    snapshot_stack,
+    snapshot_stack_sources,
+)
 from harbor_dsh_evolution.summary import summarize_payloads, write_summary
 
 
@@ -119,6 +124,9 @@ class EvolutionPlugin(BaseJobPlugin):
             DATASET_MANIFEST_NAME: dataset_manifest,
             DATASET_PREVIEW_NAME: build_dataset_preview(dataset_path, dataset_manifest),
             STACK_MANIFEST_NAME: self._stack_manifest,
+            STACK_SOURCES_NAME: snapshot_stack_sources(
+                self._stack_manifest, project_root=self._project_root
+            ),
             CONTEXT_NAME: self._context,
             "architecture-doctor.json": doctor,
         }
@@ -212,6 +220,7 @@ class EvolutionPlugin(BaseJobPlugin):
             artifact_validation=validation,
             evaluation_contract=self._stack_manifest["evaluation_contract"],
             dataset_manifest=self._dataset_manifest,
+            assessments=load_trial_assessments(self._job_dir),
         )
         write_summary(self._job_dir, summary)
         if self._lifecycle:

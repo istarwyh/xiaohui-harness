@@ -13,6 +13,7 @@ from harbor.models.agent.context import AgentContext
 
 from harbor_dsh_evolution.candidate import CandidateManifest, verify_candidate
 from harbor_dsh_evolution.runtime_binding import render_runtime_config
+from harbor_dsh_evolution.runtime_identity import DEFAULT_CANDIDATE_ACP_PACKAGE
 
 
 def _required_environment(name: str) -> str:
@@ -30,7 +31,6 @@ class DshCandidateAgent(AcpAgent):
     _RUNTIME_DIR = f"{_REMOTE_ROOT}/.harbor-runtime"
     _RUNTIME_CONFIG = f"{_RUNTIME_DIR}/cordis.yml"
     _GATEWAY_PLUGIN = f"{_RUNTIME_DIR}/llm_gateway.mjs"
-    _DSH_ACP_PACKAGE = "@deepseek-ai/dsh-acp-demo@0.1.0-rc.6"
 
     def __init__(
         self,
@@ -53,6 +53,7 @@ class DshCandidateAgent(AcpAgent):
                 f"requested={candidate_version}, manifest={self.manifest.version}"
         )
         self.candidate_digest = candidate_digest
+        self._candidate_acp_package = DEFAULT_CANDIDATE_ACP_PACKAGE
         self._model_binding = {
             "provider": str(candidate_model_provider or "").strip(),
             "model": str(candidate_model or "").strip(),
@@ -66,6 +67,31 @@ class DshCandidateAgent(AcpAgent):
         }
         if not self._model_binding["provider"] or not self._model_binding["model"]:
             raise ValueError("Candidate model provider and model are required")
+        pinned_binding = self.manifest.metadata.get("model_binding")
+        if isinstance(pinned_binding, dict):
+            pinned_identity = {
+                "provider": str(pinned_binding.get("provider") or "").strip(),
+                "model": str(pinned_binding.get("model") or "").strip(),
+                **(
+                    {
+                        "reasoning_effort": str(
+                            pinned_binding["reasoning_effort"]
+                        ).strip()
+                    }
+                    if pinned_binding.get("reasoning_effort")
+                    else {}
+                ),
+            }
+            runtime_identity = {
+                key: self._model_binding[key]
+                for key in ("provider", "model", "reasoning_effort")
+                if key in self._model_binding
+            }
+            if pinned_identity != runtime_identity:
+                raise ValueError(
+                    "Candidate model-binding.json does not match the Host Broker "
+                    "binding; create a new Candidate for a different model identity"
+                )
         self._gateway_url = _required_environment("HSE_MODEL_GATEWAY_URL")
         self._gateway_token = _required_environment("HSE_MODEL_GATEWAY_TOKEN")
         self._gateway_provider = _required_environment("HSE_MODEL_GATEWAY_PROVIDER")
@@ -84,7 +110,7 @@ class DshCandidateAgent(AcpAgent):
             "description": "Immutable Cordis composition evaluated through ACP.",
             "distribution": {
                 "npx": {
-                    "package": self._DSH_ACP_PACKAGE,
+                    "package": self._candidate_acp_package,
                     "args": ["--config", self._RUNTIME_CONFIG],
                     "env": {
                         "DSH_SESSION_ROOT": f"{self._REMOTE_ROOT}/.sessions",

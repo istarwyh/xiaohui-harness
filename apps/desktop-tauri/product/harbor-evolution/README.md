@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Installable DeepSeek Harness Plugin + Skill for running stable Harbor evaluation and controlled Agent evolution loops, with a native DSH Web dashboard.
 
-The package gives DSH twelve strict Harbor tools, dedicated Tool cards, a nine-stage Evaluation Workbench, an installation Doctor, and the model- and user-invocable `evolve-agent-with-harbor` Skill. The Skill starts with four user-facing concepts—Dataset (what to test), Generator (who answers), Evaluator plus criteria (what good means), and Optimizer (who improves it)—then compiles accepted choices into the strict Evaluation Stack. It validates Dataset identity, checks Trial Lifecycle and Score Validity, governs independent Ground Truth meta-evaluation, diagnoses evidence provenance, limits each iteration to one controlled Candidate change, and invokes the Promotion Gate only as an explicit action.
+The package gives DSH fourteen strict Harbor tools, dedicated Tool cards, a nine-stage Evaluation Workbench, an installation Doctor, and the model- and user-invocable `evolve-agent-with-harbor` Skill. The Skill starts with four user-facing concepts—Dataset (what to test), Generator (who answers), Evaluator plus criteria (what good means), and Optimizer (who improves it)—then compiles accepted choices into the strict Evaluation Stack. A DSH Generator may explicitly pin the current default model as a non-secret Candidate identity while retaining the per-Job Host Broker credential boundary. The Plugin validates Dataset identity, checks Trial Lifecycle and Score Validity, governs independent Ground Truth meta-evaluation, diagnoses evidence provenance, limits each iteration to one controlled Candidate change, and invokes the Promotion Gate only as an explicit action.
 
 ## Install
 
@@ -16,8 +16,8 @@ npx --yes dsh-harbor-evolution@latest setup --project-root "$PWD"
 
 The setup command installs both required runtimes:
 
-- `harbor-dsh-evolution==0.7.2` in a managed Python environment.
-- `dsh-harbor-evolution@0.7.2` in the selected DSH profile.
+- `harbor-dsh-evolution==0.7.3` in a managed Python environment.
+- `dsh-harbor-evolution@0.7.3` in the selected DSH profile.
 
 It then stores the absolute Harbor executable paths and a fallback `projectRoot` in the profile's `harbor-evolution` block and verifies the integration. Agent Tool calls always use the calling session's absolute working directory as their project root; the configured value remains the Web Workbench and non-Agent fallback. Existing unrelated profile entries are preserved, and rerunning setup updates the same block.
 
@@ -39,6 +39,7 @@ Users may provide a single Query or Dataset path, a Generator curl or local Agen
 The Plugin registers:
 
 - `harbor_candidate_snapshot`
+- `harbor_model_binding`
 - `harbor_evolution_init`
 - `harbor_evolution_doctor`
 - `harbor_dataset_validate`
@@ -53,7 +54,7 @@ In the `web` profile, the same package also registers:
 - descriptor-authorized Evaluator/Rubric source editing for `script` and `llm-as-judge` implementations, with optimistic concurrency and mandatory new identities;
 - a `harbor-dsh-evaluator/v1` interface shared by deterministic scripts and LLM-as-Judge implementations;
 - compact result cards for all Harbor Tool calls;
-- a `Harbor Evolution` Settings section that checks the configured project, Evaluation Stack, Jobs directory, and CLI paths.
+- a `Harbor Evolution` Settings section that checks the configured project, Evaluation Stack, Jobs directory, and CLI paths, supports process-local `projectRoot` reload, and checks npm for a newer formal release without silently installing it.
 
 The Web UI is intentionally read-only. Starting an evaluation or deciding promotion remains an explicit Agent + Skill workflow, so a page refresh can never launch an expensive Job.
 
@@ -64,6 +65,10 @@ A direct evaluation requires `candidatePath`, `datasetPath`, `stackPath`, and ex
 Before each Job, the Plugin snapshots the current DSH Agent selection—provider, model, and reasoning effort—then starts a per-Job local Model Broker. The Candidate uses the temporary `dsh-host` adapter through `dsh-host-broker` / `dsh-host-model-gateway/v1`; it receives only a short-lived Job capability file, never GPT Auth, Codex OAuth, or an upstream API key.
 
 `harbor_eval_run`, `harbor_context_preview`, and `harbor_evolution_doctor` inherit that selection by default. Advanced callers can override `candidateProvider` and `candidateModel` only as a pair, plus an optional `candidateReasoningEffort`. `openai-codex` performs a GPT Auth sign-in check before Harbor starts. The resulting model binding is part of Context v2 comparison identity, so any provider/model/reasoning change requires a new baseline.
+
+`harbor_model_binding` returns the current default selection as a credential-free `model-binding.json` draft. Once included before Candidate snapshot, it enters the Candidate digest and becomes the required Job model identity. Conflicting Job or Plugin overrides fail before Harbor starts. Even for `openai-codex`, the Candidate receives only the short-lived Broker capability—never the Host OAuth file or an upstream API key.
+
+When Settings opens, the Host performs a bounded npm registry check and caches successful results. An available release is shown with its exact installer command and release link. The browser never installs, rewrites a DSH profile, or restarts DSH; registry failures are non-blocking.
 
 `harbor_eval_result` defaults to the stable Summary. Use `view=job`, `view=dataset`, `view=progress`, `view=trial` plus a returned `trialId`, or `view=governance` to inspect sanitized instructions, generated output, evidence, and evaluator source without coupling the Agent to artifact file paths.
 
