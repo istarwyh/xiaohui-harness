@@ -47,4 +47,4 @@ pnpm --dir apps/desktop-tauri run build
 
 当前目标固定为 `aarch64-apple-darwin`；发布流水线有意不包含 Windows、Intel macOS 或 Linux 矩阵。
 
-macOS arm64 发布门禁会使用隔离且为空的 `XIAOHUI_APP_DATA_DIR`，并把 Node/npm 镜像故意设为不可访问。应用必须使用内置 Node 22.19.0 与 pnpm 11.7.0、完成冻结的离线安装，并以 HTTP 200 提供工作台。验收还要求页面显示 XiaoHui 产品名，Web Boot Manifest 包含 Harbor、Codex Auth、Better Sidebar 与 Personal Workbench 客户端 Bundle，Host 配置包含全部产品节点。便携运行时报告 Harbor 0.21.0，也能发现 `dsh-evolution` Python 插件。Harbor 验收链路还会验证冻结的 Host 模型绑定、Broker 授权、Docker 到 Host 的可达性，以及通过 GPT Auth 返回的一次真实 Candidate 响应。
+macOS arm64 发布门禁会校验 Tag 与所有桌面版本真源的一致性，构建 Harness 和带签名的更新产物，并通过 DSH 参数解析器以及原生、WSL 桌面启动器执行聚焦的 Host 启动参数契约测试。随后，流水线会把便携式 Runtime 移出应用 Bundle，故意破坏原始 Python Home 引用，并要求 `harbor --version` 与 `harbor-dsh --help` 都成功，之后才计算校验和并发布产物。该门禁有意保持小于仓库完整测试矩阵，避免桌面 Patch Release 等待无关平台或 Package。

@@ -1,21 +1,19 @@
-# XiaoHui Harness 0.2.4
+# XiaoHui Harness 0.2.5
 
 ## English
 
-- Updates the bundled Harbor integration to `dsh-harbor-evolution@0.7.2` and `harbor-dsh-evolution==0.7.2`.
-- Resolves every Agent-facing Harbor Tool workspace from the calling session's absolute working directory. Concurrent sessions stay isolated, while the configured application-data workspace remains the Web Workbench fallback.
-- Stops the desktop-managed Harness Host from opening `http://127.0.0.1:17890/` in the default browser. The Harness UI remains embedded in the XiaoHui window.
-- Uses the Harness semantic button tokens for Personal Workbench primary actions, so disabled, normal, and hover colors remain readable in light and dark themes.
-- Continues to bundle Codex Auth, Better Sidebar, the Personal Workbench plugin, the frozen offline Node dependency store, and the portable Harbor Python runtime in one macOS arm64 package.
+- Fixes desktop startup failing with `error: unknown option '--patch'` after the browser-suppression change in 0.2.4.
+- Orders desktop Overlay and rescue `--patch` arguments before the Web command-line pass-through boundary, while retaining `--no-open`, loopback binding, notifications, and bundled product configuration.
+- Adds a focused release gate that checks the DSH parser contract together with the native and WSL desktop launch vectors.
+- Retains the Harbor 0.7.2 session-workspace fix, Codex Auth, Better Sidebar, Personal Workbench, frozen offline Node dependency store, and portable Harbor Python runtime from 0.2.4.
 
 The application is not yet signed or notarized with an Apple Developer identity.
 
 ## 中文
 
-- 将内置 Harbor 集成升级到 `dsh-harbor-evolution@0.7.2` 与 `harbor-dsh-evolution==0.7.2`。
-- 所有面向 Agent 的 Harbor Tool 都从调用会话的绝对工作目录解析工作区；并发会话彼此隔离，配置在应用数据目录中的工作区只保留为 Web Workbench 的回退路径。
-- 桌面端托管的 Harness Host 不再额外用默认浏览器打开 `http://127.0.0.1:17890/`，Harness 界面仍然嵌入 XiaoHui 窗口。
-- “我的工作台”主要操作按钮改用 Harness 语义化按钮 Token，禁用、正常和悬停状态在浅色与深色主题下都保持可读。
-- macOS arm64 安装包继续一并内置 Codex Auth、Better Sidebar、Personal Workbench 插件、冻结的离线 Node 依赖 Store 和便携式 Harbor Python 运行时。
+- 修复 0.2.4 加入禁止打开外部浏览器后，桌面启动时报 `error: unknown option '--patch'` 的问题。
+- 将桌面 Overlay 与 Rescue 的 `--patch` 参数放到 Web 命令行 Pass-through 边界之前，同时保留 `--no-open`、Loopback 绑定、通知与内置产品配置。
+- 新增聚焦发布门禁，同时校验 DSH 参数解析契约以及原生、WSL 两条桌面启动参数向量。
+- 保留 0.2.4 的 Harbor 0.7.2 会话工作区修复，以及 Codex Auth、Better Sidebar、Personal Workbench、冻结的离线 Node 依赖 Store 与便携式 Harbor Python Runtime。
 
 当前应用尚未使用 Apple Developer 身份完成代码签名与公证。

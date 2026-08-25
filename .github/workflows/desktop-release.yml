@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing xiaohui-v* tag to rebuild and publish
         required: true
-        default: xiaohui-v0.2.4
+        default: xiaohui-v0.2.5
 
 permissions:
   contents: write
@@ -86,6 +86,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --dir apps/desktop-tauri run build
+
+      - name: Test desktop Host startup argument contract
+        run: |
+          pnpm exec vitest run apps/cli/tests/args.spec.ts
+          cargo test --locked --release --target "$RUST_TARGET" --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml launcher_patches_before_web_arguments
 
       - name: Test relocated XiaoHui product runtime
         run: |

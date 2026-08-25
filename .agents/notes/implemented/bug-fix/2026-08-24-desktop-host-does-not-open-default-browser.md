@@ -12,11 +12,11 @@ The loopback server is not redundant: it carries the Host API and Web assets use
 
 ## Decision
 
-Every desktop-owned Host launch passes `--no-open` immediately after `dsh web`. The native macOS/Windows command builder and the WSL command builder apply the same rule. Host startup, health probing, loopback binding, Tauri WebView navigation, notification Overlay, and rescue patches remain unchanged.
+Every desktop-owned Host launch passes `--no-open`. The native macOS/Windows command builder and the WSL command builder place all launcher-owned `--patch` options before `--no-open` and the other Web application options because the DSH CLI hands every token from the first application option to the Web command-line provider. Host startup, health probing, loopback binding, Tauri WebView navigation, notification Overlay, and rescue patches remain unchanged.
 
 ## Testing
 
-The native argument test pins the complete launch vector, including both Patch layers, `--no-open`, loopback host, and port. The WSL argument test pins the equivalent command after the Linux CLI entry. Focused Rust tests exercise both paths, and `cargo fmt --check` verifies the edited Rust source.
+The native argument test pins the complete launch vector, including both Patch layers before `--no-open`, loopback host, and port. The WSL argument test pins the equivalent command after the Linux CLI entry. The DSH argument-parser test exercises the complete desktop suffix and owns the pass-through rule that makes this ordering necessary. The macOS release workflow runs these focused parser and desktop-vector tests after compiling the release application, without restoring the unrelated full test matrix. `cargo fmt --check` verifies the edited Rust source.
 
 ## Alternatives considered
 

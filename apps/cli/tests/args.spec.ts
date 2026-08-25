@@ -45,6 +45,22 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'profile', profile: 'tui', patches: ['a.yml'], args: ['--resume', 'b', '--patch', 'late.yml'] })
   })
 
+  it('keeps desktop patches before the web pass-through boundary', () => {
+    expect(parse([
+      'web',
+      '--patch', 'desktop-overlay.yml',
+      '--patch', 'rescue.yml',
+      '--no-open',
+      '--host', '127.0.0.1',
+      '--port', '17890',
+    ])).toEqual({
+      mode: 'profile',
+      profile: 'web',
+      patches: ['desktop-overlay.yml', 'rescue.yml'],
+      args: ['--no-open', '--host', '127.0.0.1', '--port', '17890'],
+    })
+  })
+
   it('routes the plugin pnpm forwarder', () => {
     expect(parse(['plugin', '--profile', 'tui', 'add', 'turtle-ui']))
       .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', 'turtle-ui'] })

@@ -63,13 +63,13 @@ pub fn build_wsl_web_command(spec: &WslLaunchSpec) -> Result<WslCommand, String>
     args.push(spec.linux_node.clone());
     args.push(spec.linux_cli.clone());
     args.push("web".into());
-    args.push("--no-open".into());
 
     if let Some(patch) = &spec.linux_patch {
         args.push("--patch".into());
         args.push(patch.clone());
     }
 
+    args.push("--no-open".into());
     args.push("--host".into());
     args.push("127.0.0.1".into());
     args.push("--port".into());
@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn argv_matches_required_sequence() {
+    fn wsl_desktop_host_orders_launcher_patches_before_web_arguments() {
         let s = spec();
         let cmd = build_wsl_web_command(&s).unwrap();
         assert_eq!(cmd.program, "wsl.exe");
@@ -124,9 +124,9 @@ mod tests {
             "/home/u/.local/share/dsh-desktop/runtime/node/bin/node".to_string(),
             "/home/u/.local/share/dsh-desktop/harness-versions/abc/apps/cli/lib/bin.js".to_string(),
             "web".to_string(),
-            "--no-open".to_string(),
             "--patch".to_string(),
             "/home/u/.dsh/desktop-overlay/cordis.yml".to_string(),
+            "--no-open".to_string(),
             "--host".to_string(),
             "127.0.0.1".to_string(),
             "--port".to_string(),
