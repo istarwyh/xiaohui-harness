@@ -12,11 +12,11 @@ Loopback Server 并非多余组件：嵌入式 WebView 依靠它获取 Host API 
 
 ## Decision
 
-所有由桌面端持有的 Host 启动都会在 `dsh web` 后立即传入 `--no-open`。原生 macOS／Windows 命令构造器和 WSL 命令构造器遵循同一规则。Host 启动、健康检查、Loopback 绑定、Tauri WebView 导航、通知 Overlay 与 Rescue Patch 均保持不变。
+所有由桌面端持有的 Host 启动都会传入 `--no-open`。原生 macOS／Windows 命令构造器和 WSL 命令构造器都会把启动器拥有的全部 `--patch` 参数放在 `--no-open` 和其他 Web 应用参数之前，因为 DSH CLI 从第一个应用参数开始会把余下 Token 全部交给 Web 命令行 Provider。Host 启动、健康检查、Loopback 绑定、Tauri WebView 导航、通知 Overlay 与 Rescue Patch 均保持不变。
 
 ## Testing
 
-原生命令参数测试固定完整启动向量，包括两层 Patch、`--no-open`、Loopback Host 与端口。WSL 参数测试固定 Linux CLI 入口之后的对应命令。聚焦 Rust 测试覆盖两条路径，`cargo fmt --check` 验证修改后的 Rust 源码。
+原生命令参数测试固定完整启动向量，包括位于 `--no-open` 前的两层 Patch、Loopback Host 与端口。WSL 参数测试固定 Linux CLI 入口之后的对应命令。DSH 参数解析器测试会执行完整桌面参数后缀，并约束这项顺序所依赖的 Pass-through 规则。macOS 发布流水线会在编译 Release 应用后运行这些聚焦解析器与桌面参数向量测试，而不会恢复无关的完整测试矩阵。`cargo fmt --check` 验证修改后的 Rust 源码。
 
 ## Alternatives considered
 

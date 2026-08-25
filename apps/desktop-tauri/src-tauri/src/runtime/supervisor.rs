@@ -545,16 +545,13 @@ fn native_web_args(
     overlay_patch: Option<&Path>,
     rescue_patch: Option<&Path>,
 ) -> Vec<OsString> {
-    let mut args = vec![
-        cli_entry.as_os_str().to_owned(),
-        "web".into(),
-        "--no-open".into(),
-    ];
+    let mut args = vec![cli_entry.as_os_str().to_owned(), "web".into()];
     for patch in [overlay_patch, rescue_patch].into_iter().flatten() {
         args.push("--patch".into());
         args.push(patch.as_os_str().to_owned());
     }
     args.extend([
+        "--no-open".into(),
         "--host".into(),
         "127.0.0.1".into(),
         "--port".into(),
@@ -700,7 +697,7 @@ invalid plugin, expect function or object with an \"apply\" method, received obj
     }
 
     #[test]
-    fn native_desktop_host_never_opens_the_default_browser() {
+    fn native_desktop_host_orders_launcher_patches_before_web_arguments() {
         let args = native_web_args(
             Path::new("/Applications/XiaoHui Harness.app/cli.js"),
             17890,
@@ -716,11 +713,11 @@ invalid plugin, expect function or object with an \"apply\" method, received obj
             [
                 "/Applications/XiaoHui Harness.app/cli.js",
                 "web",
-                "--no-open",
                 "--patch",
                 "/tmp/desktop-overlay.yml",
                 "--patch",
                 "/tmp/rescue-overlay.yml",
+                "--no-open",
                 "--host",
                 "127.0.0.1",
                 "--port",

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-24-desktop-host-does-not-open-default-browser.md
-2026-08-24-desktop-host-does-not-open-default-browser.md: 03ae5df2157dcff78155c1a754c55dc0e4cf20e0
-2026-08-24-desktop-host-does-not-open-default-browser.zh.md: 54832093328ef63920dfc3d5671c0e903bf86e0a
+2026-08-24-desktop-host-does-not-open-default-browser.md: 8f577012d3fb9c8943ba8c3d24a3a14af801358d
+2026-08-24-desktop-host-does-not-open-default-browser.zh.md: 80d4e6f351b9a2c3b91de58637c64b12921931ba
