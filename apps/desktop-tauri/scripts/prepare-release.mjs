@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertBundledProductPeerLinks } from './product-plugin-compatibility.mjs'
 import { removeWorkspaceInstallState } from './prepare-harness-offline-store.mjs'
 import { readProductUpdatePolicy, refreshProductPlugins } from './refresh-product-plugins.mjs'
+import { syncDshUpstream } from './sync-dsh-upstream.mjs'
 
 const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = join(desktopRoot, '..', '..')
@@ -374,21 +375,35 @@ export async function prepareRelease(options = {}) {
   const fetchImpl = releaseFetch(sourceEnvironment)
   if (options.dryRun) {
     const candidateEnvironment = releaseBuildEnvironment(sourceEnvironment)
-    const updates = await withProcessEnvironment(candidateEnvironment, () => refreshProductPlugins({
-      allowDirty: options.allowDirty,
-      dryRun: true,
-      fetchImpl,
-    }))
+    const dsh = await syncDshUpstream({ dryRun: true, fetchImpl })
+    const updates = await withProcessEnvironment(candidateEnvironment, async () => [
+      ...dsh.updates,
+      ...await refreshProductPlugins({
+        allowDirty: options.allowDirty,
+        dryRun: true,
+        fetchImpl,
+      }),
+    ])
     return { scope: 'latest-candidate-static-checks', updates }
   }
 
   const rollback = snapshotManagedProduct(policy)
+  let dsh
+  try {
+    dsh = await syncDshUpstream({ fetchImpl })
+  }
+  catch (error) {
+    throw recoverReleaseFailure(error, [
+      { label: 'rollback snapshot cleanup', run: () => rollback.discard() },
+    ])
+  }
   let isolated
   try {
     isolated = isolatedReleaseEnvironment(sourceEnvironment)
   }
   catch (error) {
     throw recoverReleaseFailure(error, [
+      { label: 'DSH upstream rollback', run: () => dsh.rollback() },
       { label: 'rollback snapshot cleanup', run: () => rollback.discard() },
     ])
   }
@@ -411,7 +426,7 @@ export async function prepareRelease(options = {}) {
         XIAOHUI_OFFLINE_STORE_CACHE_DIR: '',
       })
       await verifyPreparedProduct()
-      return refreshed
+      return [...dsh.updates, ...refreshed]
     })
   }
   catch (error) {
@@ -421,6 +436,7 @@ export async function prepareRelease(options = {}) {
     if (failure) {
       failure = recoverReleaseFailure(failure, [
         { label: 'product rollback', run: () => rollback.restore() },
+        { label: 'DSH upstream rollback', run: () => dsh.rollback() },
         { label: 'temporary node_modules cleanup', run: () => removeWorkspaceInstallState(bundleRoot) },
         { label: 'isolated release environment cleanup', run: () => isolated.discard() },
         { label: 'rollback snapshot cleanup', run: () => rollback.discard() },

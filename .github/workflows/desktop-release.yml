@@ -75,6 +75,12 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify selected DSH Release for a new tag
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node apps/desktop-tauri/scripts/sync-dsh-upstream.mjs --check-current
+
       - name: Build Harness
         env:
           DSH_CLIENT_TITLE: XiaoHui Harness

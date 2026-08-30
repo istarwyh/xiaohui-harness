@@ -19,7 +19,7 @@ import {
 import {
   BrandSettingsRow, type BrandSettingsRowInjected,
 } from './BrandSettingsRow.tsx'
-import { ApplicationUpdateRow } from './ApplicationUpdateRow.tsx'
+import { ApplicationLifecycleRow } from './ApplicationLifecycleRow.tsx'
 import { en, zh, type PersonalWorkbenchKey } from './locales.ts'
 import { installPersonalWorkbenchStyles } from './styles.ts'
 
@@ -144,12 +144,12 @@ export function apply(ctx: ClientContext): void {
   }, BrandSettingsRow))
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
-    id: 'application-update',
+    id: 'application-lifecycle',
     order: 30,
     locale: SETTINGS_LOCALE_NAMESPACE,
-  }, ApplicationUpdateRow))
+  }, ApplicationLifecycleRow))
 }
 
-export type { ApplicationUpdateRowProps } from './ApplicationUpdateRow.tsx'
+export type { ApplicationLifecycleRowProps } from './ApplicationLifecycleRow.tsx'
 export type { BrandSettingsRowProps } from './BrandSettingsRow.tsx'
 export type PersonalBrandSettingsLocaleProps = PropsLocale<'settings.personal-workbench'>

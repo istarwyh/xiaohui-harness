@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  frozenOfflineInstallArgs,
   finalizeOfflineManifest,
   hashTree,
+  pinPnpmInvocationArgs,
   removeWorkspaceInstallState,
   validateOfflineStoreCache,
 } from './prepare-harness-offline-store.mjs'
@@ -78,4 +80,12 @@ test('workspace install cleanup preserves the standalone offline Store', () => {
   finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('offline install stays on the reviewed pnpm and committed lockfile', () => {
+  assert.deepEqual(pinPnpmInvocationArgs(['install']), ['--pm-on-fail=ignore', 'install'])
+  assert.deepEqual(frozenOfflineInstallArgs(), [
+    'install', '--prod', '--frozen-lockfile', '--offline', '--trust-lockfile',
+    '--store-dir', '.xiaohui-pnpm-store',
+  ])
 })

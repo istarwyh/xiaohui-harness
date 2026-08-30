@@ -11,6 +11,12 @@ import { execSync } from 'node:child_process'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import {
+  assertRecordedDshRelease,
+  readDshProvenance,
+  readDshUpdatePolicy,
+} from './dsh-release-policy.mjs'
+
 const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = join(desktopRoot, '..', '..')
 const outRoot = join(desktopRoot, 'bundled', 'harness')
@@ -35,6 +41,11 @@ const productPlugins = [
     name: 'dsh-context-doctor',
     root: join(desktopRoot, 'product', 'context-doctor'),
     destination: join('packages', 'product', 'context-doctor'),
+  },
+  {
+    name: 'dsh-plugin-marketplace',
+    root: join(desktopRoot, 'product', 'plugin-marketplace'),
+    destination: join('packages', 'product', 'plugin-marketplace'),
   },
   {
     name: 'dsh-personal-workbench',
@@ -126,7 +137,7 @@ function hashSourceWalk(sourceRoot, current, hasher, relPrefix) {
 }
 
 /** Hash the same source slices we copy into the installer bundle. */
-function hashBundledContent(trimmedWorkspace, bundlePkg, productLock) {
+function hashBundledContent(trimmedWorkspace, bundlePkg, productLock, dshUpstream) {
   const hasher = createHash('sha256')
 
   for (const name of ['package.json', 'pnpm-workspace.yaml']) {
@@ -142,6 +153,8 @@ function hashBundledContent(trimmedWorkspace, bundlePkg, productLock) {
   }
   hasher.update('pnpm-lock.yaml')
   hasher.update(productLock)
+  hasher.update('DSH_UPSTREAM.json')
+  hasher.update(JSON.stringify(dshUpstream))
 
   for (const rel of ['patches', 'vendor', join('native', 'landlock-run'), join('apps', 'cli'), join('apps', 'web')]) {
     const path = join(repoRoot, rel)
@@ -422,6 +435,9 @@ const trimmedWorkspace = buildTrimmedWorkspaceYaml(
 writeFileSync(join(outRoot, 'pnpm-workspace.yaml'), trimmedWorkspace)
 
 const rootPkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'))
+const dshPolicy = readDshUpdatePolicy(join(desktopRoot, 'product'))
+const dshUpstream = readDshProvenance(join(desktopRoot, 'product'))
+assertRecordedDshRelease({ policy: dshPolicy, provenance: dshUpstream, currentVersion: rootPkg.version })
 const productLock = readFileSync(productLockPath)
 const bundlePkg = {
   name: '@deepseek-ai/dsh-desktop-bundle',
@@ -435,13 +451,14 @@ stripDevDependencies(outRoot)
 
 const manifest = {
   harnessVersion: rootPkg.version,
+  dshUpstream,
   product: 'XiaoHui Harness',
   productPlugins: productPlugins.map(plugin => {
     const pkg = JSON.parse(readFileSync(join(plugin.root, 'package.json'), 'utf8'))
     return `${plugin.name}@${pkg.version}`
   }),
   bundledAt: new Date().toISOString(),
-  contentSha256: hashBundledContent(trimmedWorkspace, bundlePkg, productLock),
+  contentSha256: hashBundledContent(trimmedWorkspace, bundlePkg, productLock, dshUpstream),
   method: 'trimmed-monorepo-source-frozen-lock',
 }
 writeFileSync(join(outRoot, '.bundle-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)

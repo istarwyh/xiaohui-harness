@@ -163,6 +163,12 @@ test('product update policy rejects escaped, duplicate, and overlapping destinat
     ]), '/tmp/product'),
     /destination overlaps .*pythonDestination/,
   )
+  for (const destination of ['DSH_UPSTREAM.json', 'dsh-update-policy.json']) {
+    assert.throws(
+      () => validateProductUpdatePolicy(updatePolicy([npmPolicy({ destination })]), '/tmp/product'),
+      /destination is reserved/,
+    )
+  }
 })
 
 test('product update policy rejects a destination that crosses an existing symlink', (t) => {

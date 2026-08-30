@@ -54,7 +54,12 @@ const npmPackageSegment = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?'
 const npmPackagePattern = new RegExp(`^(?:@${npmPackageSegment}/)?${npmPackageSegment}$`)
 const pythonPackagePattern = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
 const githubRepositoryPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
-const reservedProductPaths = new Set(['harness-pnpm-lock.yaml', 'plugin-update-policy.json'])
+const reservedProductPaths = new Set([
+  'DSH_UPSTREAM.json',
+  'dsh-update-policy.json',
+  'harness-pnpm-lock.yaml',
+  'plugin-update-policy.json',
+])
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -757,6 +762,29 @@ async function stageGitHubBranchPlugin(policy, roots, fetchImpl) {
   verifyManagedSnapshot(destination, current.manifest)
   const latest = await resolveGitHubBranch(policy.repository, policy.branch, fetchImpl)
   if (current.provenance?.commit === latest.commit) {
+    const work = join(roots.stagingRoot, policy.id)
+    const staged = join(work, 'staged')
+    copyDirectory(destination, staged)
+    const manifest = JSON.parse(readFileSync(join(staged, 'package.json'), 'utf8'))
+    const patches = applyApprovedPeerOverrides(manifest, policy)
+    if (patches.length > 0) {
+      writeManifestIfChanged(staged, manifest, patches)
+      validateProductPlugin(staged, policy, roots.workspacePackages, roots.managedNodeVersion)
+      writeProvenance(staged, {
+        ...current.provenance,
+        package: manifest.name,
+        version: manifest.version,
+        patches,
+      })
+      return {
+        destination,
+        staged,
+        package: policy.package,
+        from: current.manifest.version,
+        to: current.manifest.version,
+        commit: latest.commit,
+      }
+    }
     validateProductPlugin(destination, policy, roots.workspacePackages, roots.managedNodeVersion)
     return undefined
   }
@@ -803,11 +831,37 @@ async function stageGitHubReleasePair(policy, roots, fetchImpl) {
   const latest = await resolveGitHubLatestRelease(policy.repository, fetchImpl)
   assertNoDowngrade(policy.package, current.manifest.version, latest.version)
   if (current.provenance?.commit === latest.commit && current.provenance?.releaseTag === latest.tag) {
-    validateProductPlugin(destination, policy, roots.workspacePackages, roots.managedNodeVersion)
     const python = readPythonProjectMetadata(readFileSync(join(pythonDestination, 'pyproject.toml'), 'utf8'))
     if (python.name !== policy.pythonPackage || python.version !== current.manifest.version) {
       throw new Error(`committed Harbor JavaScript/Python versions do not match: ${current.manifest.version} and ${python.version}`)
     }
+    const work = join(roots.stagingRoot, policy.id)
+    const staged = join(work, 'staged-node')
+    copyDirectory(destination, staged)
+    const manifest = JSON.parse(readFileSync(join(staged, 'package.json'), 'utf8'))
+    const peerPatches = applyApprovedPeerOverrides(manifest, policy)
+    if (peerPatches.length > 0) {
+      const patches = [
+        ...peerPatches,
+        'Preserve the XiaoHui bilingual README projection.',
+      ]
+      writeManifestIfChanged(staged, manifest, peerPatches)
+      validateProductPlugin(staged, policy, roots.workspacePackages, roots.managedNodeVersion)
+      writeProvenance(staged, {
+        ...current.provenance,
+        package: manifest.name,
+        version: manifest.version,
+        patches,
+      })
+      return [{
+        destination,
+        staged,
+        package: policy.package,
+        from: current.manifest.version,
+        to: current.manifest.version,
+      }]
+    }
+    validateProductPlugin(destination, policy, roots.workspacePackages, roots.managedNodeVersion)
     return []
   }
 

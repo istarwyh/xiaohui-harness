@@ -9,6 +9,7 @@ import {
   PRODUCT_CLIENT_IDS,
   assertCleanChildExit,
   assertProductClientBoot,
+  buildProductSmokeOverlay,
   createReleaseChildEnvironment,
   stopChild,
 } from './verify-product-release.mjs'
@@ -152,4 +153,10 @@ test('assembled Client boot requires every product response, mounted UI, and qui
     () => assertProductClientBoot({ ...clean, clientResponses: missing, frameCount: 0 }),
     /assembled Web application frame never mounted[\s\S]*dsh-harbor-evolution Client bundle was not requested/,
   )
+})
+
+test('product smoke overlay mounts the Plugin Marketplace', () => {
+  const overlay = buildProductSmokeOverlay('/tmp/workspace', '/tmp/runtime')
+  assert.match(overlay, /id: xiaohui-release-plugin-marketplace/)
+  assert.match(overlay, /name: dsh-plugin-marketplace/)
 })

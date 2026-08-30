@@ -292,9 +292,11 @@
     }
 
     const appFrame = document.getElementById('app')
-    const desktopUpdateChannel = 'xiaohui.desktop.update'
-    const desktopUpdateVersion = 1
-    const desktopUpdateRequestId = /^[A-Za-z0-9_-]{1,64}$/
+    const desktopLifecycleChannel = 'xiaohui.desktop.lifecycle'
+    const desktopLifecycleVersion = 1
+    const desktopLifecycleRequestId = /^[A-Za-z0-9_-]{1,64}$/
+    const marketplaceLinkChannel = 'xiaohui.desktop.marketplace-link'
+    const marketplaceLinkVersion = 1
     let embeddedOrigin
     try {
       embeddedOrigin = new URL(window.__DSH_WEB_URL__).origin
@@ -303,38 +305,104 @@
       embeddedOrigin = undefined
     }
 
-    function isDesktopUpdateRequest(value) {
+    function readDesktopLifecycleAction(value) {
       if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
       const keys = Object.keys(value).sort()
       if (keys.join(',') !== 'channel,requestId,type,version') return false
-      return value.channel === desktopUpdateChannel
-        && value.version === desktopUpdateVersion
-        && value.type === 'check-request'
+      if (value.channel !== desktopLifecycleChannel
+        || value.version !== desktopLifecycleVersion
+        || typeof value.requestId !== 'string'
+        || !desktopLifecycleRequestId.test(value.requestId)) return false
+      if (value.type === 'check-update-request') return 'check-update'
+      if (value.type === 'restart-request') return 'restart'
+      return false
+    }
+
+    function isMarketplaceExternalUrl(value) {
+      if (typeof value !== 'string') return false
+      let url
+      try {
+        url = new URL(value)
+      }
+      catch {
+        return false
+      }
+      if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.port !== '' || url.hash !== '') return false
+      const segments = url.pathname.split('/').filter(Boolean)
+      const validSegment = segment => /^[A-Za-z0-9_.-]+$/.test(segment)
+      if (url.hostname === 'github.com') {
+        return url.search === '' && segments.length === 2 && segments.every(validSegment)
+      }
+      if (url.hostname !== 'www.npmjs.com') return false
+      if (segments.length === 1 && segments[0] === 'search') {
+        const keys = Array.from(url.searchParams.keys())
+        return keys.length === 1 && keys[0] === 'q' && url.searchParams.get('q') !== ''
+      }
+      if (url.search !== '' || segments[0] !== 'package') return false
+      if (segments.length === 2) return validSegment(segments[1])
+      return segments.length === 3 && /^@[A-Za-z0-9_.-]+$/.test(segments[1]) && validSegment(segments[2])
+    }
+
+    function isMarketplaceLinkRequest(value) {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+      const keys = Object.keys(value).sort()
+      if (keys.join(',') !== 'channel,requestId,type,url,version') return false
+      return value.channel === marketplaceLinkChannel
+        && value.version === marketplaceLinkVersion
+        && value.type === 'open-request'
         && typeof value.requestId === 'string'
-        && desktopUpdateRequestId.test(value.requestId)
+        && desktopLifecycleRequestId.test(value.requestId)
+        && isMarketplaceExternalUrl(value.url)
     }
 
     window.addEventListener('message', async (event) => {
       const embeddedWindow = appFrame.contentWindow
       if (embeddedOrigin === undefined || embeddedWindow === null) return
       if (event.source !== embeddedWindow || event.origin !== embeddedOrigin) return
-      if (!isDesktopUpdateRequest(event.data)) return
+      if (isMarketplaceLinkRequest(event.data)) {
+        const response = {
+          channel: marketplaceLinkChannel,
+          version: marketplaceLinkVersion,
+          type: 'open-response',
+          requestId: event.data.requestId,
+        }
+        try {
+          const invoke = window.__TAURI__?.core?.invoke
+          if (typeof invoke !== 'function') throw new Error('Desktop external-link bridge is unavailable')
+          await invoke('open_marketplace_url', { url: event.data.url })
+          response.ok = true
+        }
+        catch (error) {
+          response.ok = false
+          response.error = String(error instanceof Error ? error.message : error).slice(0, 2048)
+        }
+        embeddedWindow.postMessage(response, embeddedOrigin)
+        return
+      }
+      const lifecycleAction = readDesktopLifecycleAction(event.data)
+      if (lifecycleAction === false) return
 
       const response = {
-        channel: desktopUpdateChannel,
-        version: desktopUpdateVersion,
+        channel: desktopLifecycleChannel,
+        version: desktopLifecycleVersion,
         requestId: event.data.requestId,
       }
-      embeddedWindow.postMessage({ ...response, type: 'check-accepted' }, embeddedOrigin)
+      embeddedWindow.postMessage({ ...response, type: `${lifecycleAction}-accepted` }, embeddedOrigin)
       try {
         const invoke = window.__TAURI__?.core?.invoke
-        if (typeof invoke !== 'function') throw new Error('Desktop update bridge is unavailable')
-        response.type = 'check-response'
+        if (typeof invoke !== 'function') throw new Error('Desktop lifecycle bridge is unavailable')
+        if (lifecycleAction === 'check-update') {
+          response.message = await invoke('check_for_updates')
+        }
+        else {
+          await invoke('restart_app')
+          throw new Error('Desktop restart returned without relaunching')
+        }
+        response.type = `${lifecycleAction}-response`
         response.ok = true
-        response.message = await invoke('check_for_updates')
       }
       catch (error) {
-        response.type = 'check-response'
+        response.type = `${lifecycleAction}-response`
         response.ok = false
         response.error = String(error instanceof Error ? error.message : error).slice(0, 2048)
       }

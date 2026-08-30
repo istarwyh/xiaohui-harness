@@ -1057,10 +1057,12 @@ fn configure_pnpm_install(
             store.display()
         ));
     }
-    cmd.arg("install")
+    cmd.arg("--pm-on-fail=ignore")
+        .arg("install")
         .arg("--prod")
         .arg("--frozen-lockfile")
         .arg("--offline")
+        .arg("--trust-lockfile")
         .arg("--store-dir")
         .arg(&store)
         .current_dir(harness_root)
@@ -1185,12 +1187,13 @@ fn spawn_pipe_reader<T: Read + Send + 'static>(pipe: Option<T>) -> std::thread::
 #[cfg(test)]
 mod tests {
     use super::{
-        find_existing_harness, gc_harness_versions, harness_root_for_bundle, harness_tree_bootable,
-        manifest_ready, node_archive_spec_for, node_matches_manifest, safe_archive_relative_path,
-        HARNESS_TREES_KEPT,
+        configure_pnpm_install, find_existing_harness, gc_harness_versions,
+        harness_root_for_bundle, harness_tree_bootable, manifest_ready, node_archive_spec_for,
+        node_matches_manifest, safe_archive_relative_path, HARNESS_TREES_KEPT,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::time::Duration;
 
     fn make_harness_tree(root: &Path, installed: bool) {
@@ -1212,6 +1215,33 @@ mod tests {
         let installed = dir.join("installed");
         make_harness_tree(&installed, true);
         assert!(harness_tree_bootable(&installed));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn offline_install_uses_only_the_pinned_manager_and_reviewed_lockfile() {
+        let dir = std::env::temp_dir().join(format!("dsh-pnpm-args-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join(".xiaohui-pnpm-store")).unwrap();
+        let mut command = Command::new("pnpm");
+        configure_pnpm_install(&mut command, Path::new("node"), &dir).unwrap();
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            &args[..6],
+            [
+                "--pm-on-fail=ignore",
+                "install",
+                "--prod",
+                "--frozen-lockfile",
+                "--offline",
+                "--trust-lockfile",
+            ]
+        );
+        assert_eq!(args[6], "--store-dir");
+        assert_eq!(Path::new(&args[7]), dir.join(".xiaohui-pnpm-store"));
         let _ = fs::remove_dir_all(&dir);
     }
 

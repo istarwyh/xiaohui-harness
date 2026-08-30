@@ -1,0 +1,56 @@
+{
+  "name": "dsh-plugin-marketplace",
+  "version": "0.2.8",
+  "description": "DeepSeek Harness Web UI 内置插件市场：在设置页直接浏览 github.com/topics/dsh-plugin，支持搜索、按 Star 排序、查看安装方式。",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE",
+    "vendor"
+  ],
+  "homepage": "https://github.com/Scorp1o117/dsh-plugin-marketplace",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "marketplace",
+    "web-ui"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Scorp1o117/dsh-plugin-marketplace.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Scorp1o117/dsh-plugin-marketplace/issues"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "@deepseek-ai/dsh-settings": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-llm": "0.1.1-rc.1"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  }
+}

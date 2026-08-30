@@ -31,12 +31,19 @@ const desktopShellSource = readFileSync(join(desktopRoot, 'shell.html'), 'utf8')
 const desktopI18nSource = readFileSync(join(desktopRoot, 'desktop-i18n.js'), 'utf8')
 const desktopAppIcon = readFileSync(join(desktopRoot, 'app-icon.png'))
 const desktopUpdateSmokeResult = 'Development build smoke does not check desktop updates'
+const missingMarketplaceRepository = 'missing-npm-package'
+const validMarketplaceRepository = 'verified-plugin-repository'
+const validMarketplacePackage = '@xiaohui-test/verified-plugin'
+const missingMarketplacePackage = '@xiaohui-test/repository-sdk'
+const validMarketplaceNonPluginPackage = '@xiaohui-test/verified-sdk'
+const syntheticInstallFailure = 'synthetic install failure'
 
 /** Product Client packages that must execute during the assembled Web smoke. */
 export const PRODUCT_CLIENT_IDS = [
   'dsh-codex-auth',
   'dsh-better-sidebar',
   'dsh-context-doctor',
+  'dsh-plugin-marketplace',
   'dsh-personal-workbench',
   'dsh-harbor-evolution',
 ]
@@ -116,7 +123,7 @@ export function assertInstalledProductPeerLinks(root) {
   const workspace = readWorkspacePackageVersions(root)
   const productRoot = join(root, 'packages', 'product')
   let checked = 0
-  for (const plugin of ['harbor-evolution', 'dsh-codex-auth', 'dsh-better-sidebar', 'context-doctor', 'personal-workbench']) {
+  for (const plugin of ['harbor-evolution', 'dsh-codex-auth', 'dsh-better-sidebar', 'context-doctor', 'plugin-marketplace', 'personal-workbench']) {
     const pluginRoot = join(productRoot, plugin)
     const manifest = JSON.parse(readFileSync(join(pluginRoot, 'package.json'), 'utf8'))
     for (const name of Object.keys(manifest.peerDependencies ?? {})) {
@@ -157,6 +164,8 @@ export function buildProductSmokeOverlay(workspace, productRuntimeRoot) {
       name: dsh-better-sidebar
     - id: xiaohui-release-context-doctor
       name: dsh-context-doctor
+    - id: xiaohui-release-plugin-marketplace
+      name: dsh-plugin-marketplace
     - id: xiaohui-release-personal-workbench
       name: dsh-personal-workbench
     - id: xiaohui-release-harbor-evolution
@@ -272,6 +281,40 @@ export function assertProductClientBoot(result) {
   }
 }
 
+async function exerciseMarketplace(settings, { openExternalLinks = false } = {}) {
+  await settings.getByText(`XiaoHui-test/${missingMarketplaceRepository}`, { exact: true }).click()
+  await settings.getByText(
+    'No npm package both links to this repository and declares dsh.bundle.patch. Follow the repository README instead.',
+    { exact: true },
+  ).waitFor({ timeout: 10_000 })
+  await settings.getByText(`Install failed: ${syntheticInstallFailure}`, { exact: true }).waitFor({ timeout: 10_000 })
+  const unavailable = settings.getByRole('button', { name: 'One-click unavailable', exact: true })
+  await unavailable.waitFor({ timeout: 10_000 })
+  if (await unavailable.isEnabled()) {
+    throw new Error('Marketplace enabled one-click install for a repository without an npm package')
+  }
+
+  await settings.getByText(`XiaoHui-test/${validMarketplaceRepository}`, { exact: true }).click()
+  await settings.getByText(
+    `Installable npm package: ${validMarketplacePackage}@1.2.3`,
+    { exact: true },
+  ).waitFor({ timeout: 10_000 })
+  if (openExternalLinks) {
+    await settings.getByRole('link', { name: 'Open GitHub repo ↗', exact: true }).click()
+    await settings.getByRole('link', { name: 'Search npm ↗', exact: true }).click()
+  }
+  const install = settings.getByRole('button', { name: 'Install', exact: true })
+  await install.waitFor({ timeout: 10_000 })
+  if (!await install.isEnabled()) {
+    throw new Error('Marketplace did not enable one-click install for a verified npm package')
+  }
+  await install.click()
+  await settings.getByRole('button', {
+    name: `Install ${validMarketplacePackage}?`,
+    exact: true,
+  }).waitFor({ timeout: 10_000 })
+}
+
 async function clickOnboardingAction(page, name, waitMilliseconds) {
   const action = page.getByRole('button', { name, exact: true })
   const deadline = Date.now() + waitMilliseconds
@@ -304,13 +347,15 @@ function buildDesktopBridgeSmokeShell(baseUrl) {
     window.__DSH_WEB_URL__ = ${encodedBaseUrl}
     window.__DSH_LOCALE__ = 'en'
     window.__DSH_CHROME__ = { os: 'macos', titlebar_height: 32, left: [], right: [] }
-    window.__XIAOHUI_UPDATE_COMMANDS__ = []
+    window.__XIAOHUI_DESKTOP_COMMANDS__ = []
     window.__TAURI__ = {
       core: {
-        invoke: async (command) => {
-          window.__XIAOHUI_UPDATE_COMMANDS__.push(command)
-          if (command !== 'check_for_updates') throw new Error('unexpected desktop command: ' + command)
-          return ${JSON.stringify(desktopUpdateSmokeResult)}
+        invoke: async (command, args) => {
+          window.__XIAOHUI_DESKTOP_COMMANDS__.push({ command, args })
+          if (command === 'open_marketplace_url') return
+          if (command === 'check_for_updates') return ${JSON.stringify(desktopUpdateSmokeResult)}
+          if (command === 'restart_app') return new Promise(() => {})
+          throw new Error('unexpected desktop command: ' + command)
         },
       },
     }
@@ -394,6 +439,90 @@ async function runBrowserSmoke(baseUrl, env) {
         if (pathname === `/plugins/${id}/client.js`) clientResponses[id] = response.status()
       }
     })
+    await page.route('https://api.github.com/**', route => {
+      const pathname = new URL(route.request().url()).pathname
+      if (pathname === '/search/repositories') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            total_count: 2,
+            items: [missingMarketplaceRepository, validMarketplaceRepository].map((name, index) => ({
+              full_name: `XiaoHui-test/${name}`,
+              description: `Release smoke repository ${name}`,
+              stargazers_count: 2 - index,
+              updated_at: '2026-08-30T00:00:00Z',
+              language: 'JavaScript',
+              html_url: `https://github.com/XiaoHui-test/${name}`,
+            })),
+          }),
+        })
+      }
+      if (pathname.endsWith('/readme')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ content: Buffer.from('Release smoke README').toString('base64') }),
+        })
+      }
+      return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' })
+    })
+    await page.route('https://registry.npmjs.org/**', route => {
+      const url = new URL(route.request().url())
+      if (url.pathname === '/-/v1/search') {
+        const repository = url.searchParams.get('text')
+        const names = repository === validMarketplaceRepository
+          ? [validMarketplacePackage, validMarketplaceNonPluginPackage]
+          : repository === missingMarketplaceRepository ? [missingMarketplacePackage] : []
+        const objects = names.map(name => ({
+          package: {
+            name,
+            links: { repository: `git+https://github.com/XiaoHui-test/${repository}.git` },
+          },
+        }))
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ objects, total: objects.length }),
+        })
+      }
+      if (route.request().headers().accept !== 'application/json') {
+        return route.fulfill({
+          status: 406,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'release smoke requires npm latest metadata as standard JSON' }),
+        })
+      }
+      if (decodeURIComponent(url.pathname) === `/${validMarketplacePackage}/latest`) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            name: validMarketplacePackage,
+            version: '1.2.3',
+            dsh: {
+              bundle: { patch: './cordis.patch.yml' },
+              smoke: { upstreamRepository: `https://github.com/XiaoHui-test/${validMarketplaceRepository}` },
+            },
+          }),
+        })
+      }
+      if (decodeURIComponent(url.pathname) === `/${validMarketplaceNonPluginPackage}/latest`
+        || decodeURIComponent(url.pathname) === `/${missingMarketplacePackage}/latest`) {
+        const name = decodeURIComponent(url.pathname).slice(1, -'/latest'.length)
+        const repository = name === missingMarketplacePackage ? missingMarketplaceRepository : validMarketplaceRepository
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            name,
+            version: '1.2.3',
+            repository: `git+https://github.com/XiaoHui-test/${repository}.git`,
+          }),
+        })
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    })
 
     const navigation = await page.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 })
     if (navigation === null || navigation.status() !== 200) {
@@ -427,6 +556,15 @@ async function runBrowserSmoke(baseUrl, env) {
     if (await update.isEnabled()) {
       throw new Error('standalone XiaoHui Web exposed the desktop-only update action as enabled')
     }
+    const restart = settings.getByRole('button', { name: 'Restart XiaoHui', exact: true })
+    await restart.waitFor({ timeout: 10_000 })
+    if (await restart.isEnabled()) {
+      throw new Error('standalone XiaoHui Web exposed the desktop-only restart action as enabled')
+    }
+    await settings.getByRole('button', { name: 'Plugin Marketplace', exact: true }).click()
+    await settings.getByPlaceholder('Search plugins (keyword, or empty to browse all)…', { exact: true }).waitFor({ timeout: 10_000 })
+    await exerciseMarketplace(settings)
+    await settings.getByRole('button', { name: 'General', exact: true }).click()
     assertProductClientBoot({
       clientResponses,
       pageErrors,
@@ -456,6 +594,10 @@ async function runBrowserSmoke(baseUrl, env) {
     await embedded.getByRole('button', { name: 'Settings', exact: true }).click()
     const embeddedSettings = embedded.getByRole('dialog', { name: 'Settings' })
     await embeddedSettings.waitFor({ timeout: 10_000 })
+    await embeddedSettings.getByRole('button', { name: 'Plugin Marketplace', exact: true }).click()
+    await embeddedSettings.getByPlaceholder('Search plugins (keyword, or empty to browse all)…', { exact: true }).waitFor({ timeout: 10_000 })
+    await exerciseMarketplace(embeddedSettings, { openExternalLinks: true })
+    await embeddedSettings.getByRole('button', { name: 'General', exact: true }).click()
     const embeddedUpdate = embeddedSettings.getByRole('button', { name: 'Check and update', exact: true })
     await embeddedUpdate.waitFor({ timeout: 10_000 })
     if (!await embeddedUpdate.isEnabled()) {
@@ -463,9 +605,36 @@ async function runBrowserSmoke(baseUrl, env) {
     }
     await embeddedUpdate.click()
     await embeddedSettings.getByText(desktopUpdateSmokeResult, { exact: true }).waitFor({ timeout: 10_000 })
-    const invokedCommands = await page.evaluate(() => window.__XIAOHUI_UPDATE_COMMANDS__)
-    if (JSON.stringify(invokedCommands) !== JSON.stringify(['check_for_updates'])) {
-      throw new Error(`desktop update control invoked unexpected commands: ${JSON.stringify(invokedCommands)}`)
+    const embeddedRestart = embeddedSettings.getByRole('button', { name: 'Restart XiaoHui', exact: true })
+    await embeddedRestart.waitFor({ timeout: 10_000 })
+    if (!await embeddedRestart.isEnabled()) {
+      throw new Error('desktop XiaoHui shell did not enable the application restart action')
+    }
+    await embeddedRestart.click()
+    await embeddedSettings.getByText(
+      'Stopping the private Host and restarting XiaoHui…',
+      { exact: true },
+    ).waitFor({ timeout: 10_000 })
+    await page.waitForFunction(
+      () => window.__XIAOHUI_DESKTOP_COMMANDS__?.some(entry => entry.command === 'restart_app') === true,
+      undefined,
+      { timeout: 10_000 },
+    )
+    const invokedCommands = await page.evaluate(() => window.__XIAOHUI_DESKTOP_COMMANDS__)
+    const expectedCommands = [
+      {
+        command: 'open_marketplace_url',
+        args: { url: `https://github.com/XiaoHui-test/${validMarketplaceRepository}` },
+      },
+      {
+        command: 'open_marketplace_url',
+        args: { url: `https://www.npmjs.com/package/${validMarketplacePackage}` },
+      },
+      { command: 'check_for_updates' },
+      { command: 'restart_app' },
+    ]
+    if (JSON.stringify(invokedCommands) !== JSON.stringify(expectedCommands)) {
+      throw new Error(`desktop controls invoked unexpected commands: ${JSON.stringify(invokedCommands)}`)
     }
     assertProductClientBoot({
       clientResponses,
@@ -509,6 +678,26 @@ async function runHostSmoke(root, productRuntimeRoot) {
   const overlay = join(world, 'product.overlay.yml')
   writeFileSync(overlay, buildProductSmokeOverlay(world, productRuntimeRoot))
   const env = createReleaseChildEnvironment(world, productRuntimeRoot)
+  writeFileSync(join(env.DSH_HOME, 'settings.yaml'), `plugin-marketplace:
+  install:
+    pkg: ""
+    ts: 0
+  installState:
+    status: error
+    message: ${syntheticInstallFailure}
+    ts: 1
+    pkg: ${missingMarketplaceRepository}
+  aiExplain:
+    repo: ""
+    desc: ""
+    readme: ""
+    ts: 0
+  aiExplainResult:
+    status: idle
+    text: ""
+    repo: ""
+    ts: 0
+`)
   const child = spawn(process.execPath, [
     join(root, 'apps', 'cli', 'lib', 'bin.js'),
     'web',
@@ -591,6 +780,30 @@ function verifyOfflineArchive(root) {
   }
 }
 
+async function verifyMarketplaceHostContract(root) {
+  const entry = join(root, 'packages', 'product', 'plugin-marketplace', 'index.js')
+  const marketplace = await import(`${pathToFileURL(entry).href}?verify=${Date.now()}`)
+  const parsed = marketplace.Config({
+    installState: {
+      status: 'error',
+      message: syntheticInstallFailure,
+      ts: 1,
+      pkg: missingMarketplaceRepository,
+    },
+  })
+  if (parsed.installState.pkg !== missingMarketplaceRepository) {
+    throw new Error('Plugin Marketplace installState schema discarded its package identity')
+  }
+  const diagnostic = marketplace.installFailureMessage({
+    code: 1,
+    stdout: 'ERR_PNPM_FETCH_404 GET https://registry.npmjs.org/missing-npm-package: Not Found - 404',
+    stderr: 'dsh: pnpm failed in profile directory /tmp/profile',
+  })
+  if (!diagnostic.includes('ERR_PNPM_FETCH_404') || diagnostic.includes('profile directory')) {
+    throw new Error(`Plugin Marketplace hid the actionable pnpm diagnostic: ${diagnostic}`)
+  }
+}
+
 /** Run the complete local release compatibility smoke. */
 export async function verifyPreparedProduct(root = harnessRoot, productRuntimeRoot = runtimeRoot) {
   const commandWorld = mkdtempSync(join(tmpdir(), 'xiaohui-release-command-'))
@@ -602,10 +815,11 @@ export async function verifyPreparedProduct(root = harnessRoot, productRuntimeRo
     if (lockPeers !== installedPeers) {
       throw new Error(`product peer verification count changed after install: lock=${lockPeers}, installed=${installedPeers}`)
     }
+    await verifyMarketplaceHostContract(root)
     run(join(productRuntimeRoot, 'venv', 'bin', 'harbor'), ['--version'], { cwd: commandWorld, env })
     run(join(productRuntimeRoot, 'venv', 'bin', 'harbor-dsh'), ['--help'], { cwd: commandWorld, env })
     await runHostSmoke(root, productRuntimeRoot)
-    console.log(`verify-product-release: ${installedPeers} bundled runtime peer links, five assembled Client plugins, and the Application updates control passed`)
+    console.log(`verify-product-release: ${installedPeers} bundled runtime peer links, ${PRODUCT_CLIENT_IDS.length} assembled Client plugins, the Plugin Marketplace, and the Application lifecycle controls passed`)
   }
   finally {
     removeWorkspaceInstallState(root)

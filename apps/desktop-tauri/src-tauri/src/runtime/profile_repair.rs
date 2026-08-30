@@ -23,6 +23,10 @@ const MANAGED_PRODUCT_LINKS: &[(&str, &str)] = &[
     ("dsh-better-sidebar", "packages/product/dsh-better-sidebar"),
     ("dsh-context-doctor", "packages/product/context-doctor"),
     (
+        "dsh-plugin-marketplace",
+        "packages/product/plugin-marketplace",
+    ),
+    (
         "dsh-personal-workbench",
         "packages/product/personal-workbench",
     ),
@@ -345,6 +349,7 @@ mod tests {
         let current = root.join("harness-versions").join("current");
         let current_plugin = current.join("packages/product/harbor-evolution");
         let current_context_doctor = current.join("packages/product/context-doctor");
+        let current_marketplace = current.join("packages/product/plugin-marketplace");
         let old_plugin = root
             .join("harness-versions")
             .join("old")
@@ -353,9 +358,14 @@ mod tests {
             .join("harness-versions")
             .join("old")
             .join("packages/product/context-doctor");
+        let old_marketplace = root
+            .join("harness-versions")
+            .join("old")
+            .join("packages/product/plugin-marketplace");
         fs::create_dir_all(&profile).unwrap();
         fs::create_dir_all(&current_plugin).unwrap();
         fs::create_dir_all(&current_context_doctor).unwrap();
+        fs::create_dir_all(&current_marketplace).unwrap();
         fs::write(
             current_plugin.join("package.json"),
             r#"{"name":"dsh-harbor-evolution"}"#,
@@ -367,11 +377,17 @@ mod tests {
         )
         .unwrap();
         fs::write(
+            current_marketplace.join("package.json"),
+            r#"{"name":"dsh-plugin-marketplace"}"#,
+        )
+        .unwrap();
+        fs::write(
             profile.join("package.json"),
             format!(
-                "{{\"dependencies\":{{\"dsh-harbor-evolution\":\"link:{}\",\"dsh-context-doctor\":\"link:{}\",\"third-party\":\"link:/tmp/third-party\"}}}}",
+                "{{\"dependencies\":{{\"dsh-harbor-evolution\":\"link:{}\",\"dsh-context-doctor\":\"link:{}\",\"dsh-plugin-marketplace\":\"link:{}\",\"third-party\":\"link:/tmp/third-party\"}}}}",
                 old_plugin.display(),
-                old_context_doctor.display()
+                old_context_doctor.display(),
+                old_marketplace.display()
             ),
         )
         .unwrap();
@@ -398,6 +414,10 @@ mod tests {
         assert_eq!(
             value["dependencies"]["dsh-context-doctor"],
             format!("link:{}", current_context_doctor.display())
+        );
+        assert_eq!(
+            value["dependencies"]["dsh-plugin-marketplace"],
+            format!("link:{}", current_marketplace.display())
         );
         assert_eq!(
             value["dependencies"]["third-party"],

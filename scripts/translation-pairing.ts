@@ -177,6 +177,7 @@ export const TRANSLATION_SCOPE_GLOB_EXCLUDES = [
   'apps/desktop-tauri/product/dsh-better-sidebar/**',
   'apps/desktop-tauri/product/dsh-codex-auth/**',
   'apps/desktop-tauri/product/context-doctor/**',
+  'apps/desktop-tauri/product/plugin-marketplace/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-*/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/**',
   'vendor/**',

@@ -13,8 +13,10 @@
   "patches": [
     "Set @deepseek-ai/dsh-skill peer range from >=0.1.0-rc.6 to ^0.1.0-rc.6 || ^0.1.1-rc.1.",
     "Set @deepseek-ai/dsh-tools peer range from >=0.1.0-rc.6 to ^0.1.0-rc.6 || ^0.1.1-rc.1.",
-    "Preserve the XiaoHui bilingual README projection."
+    "Preserve the XiaoHui bilingual README projection.",
+    "Set @deepseek-ai/dsh-skill peer range from ^0.1.0-rc.6 || ^0.1.1-rc.1 to 0.1.1-rc.1.",
+    "Set @deepseek-ai/dsh-tools peer range from ^0.1.0-rc.6 || ^0.1.1-rc.1 to 0.1.1-rc.1."
   ],
   "license": "MIT",
-  "treeSha256": "7f7f0f8d31809d21947f0bead783b916da8e89cb15575b165b72299057655e0f"
+  "treeSha256": "2ccf6fa2af6838a35bd407e30c44792f27197099a19535a4d3d72e4513e73e8f"
 }

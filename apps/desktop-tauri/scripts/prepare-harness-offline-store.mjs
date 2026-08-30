@@ -23,11 +23,25 @@ const MIN_PRODUCT_STORE_FILES = 1_000
 const cacheRoot = process.env.XIAOHUI_OFFLINE_STORE_CACHE_DIR?.trim()
 const cacheMetadataName = 'xiaohui-pnpm-store-cache-v1.json'
 
+/** Keep the release command on the reviewed pnpm binary instead of auto-downloading another version. */
+export function pinPnpmInvocationArgs(args) {
+  return ['--pm-on-fail=ignore', ...args]
+}
+
+/** Exact frozen install performed by release acceptance and native first launch. */
+export function frozenOfflineInstallArgs() {
+  return [
+    'install', '--prod', '--frozen-lockfile', '--offline', '--trust-lockfile',
+    '--store-dir', '.xiaohui-pnpm-store',
+  ]
+}
+
 function runPnpm(args) {
   const npmExecPath = process.env.npm_execpath
+  const pinnedArgs = pinPnpmInvocationArgs(args)
   const invocation = npmExecPath && /\.[cm]?js$/i.test(npmExecPath)
-    ? [process.execPath, [npmExecPath, ...args]]
-    : ['pnpm', args]
+    ? [process.execPath, [npmExecPath, ...pinnedArgs]]
+    : ['pnpm', pinnedArgs]
   const result = spawnSync(invocation[0], invocation[1], {
     cwd: harnessRoot,
     env: { ...process.env, CI: 'true' },
@@ -221,10 +235,7 @@ export function prepareHarnessOfflineStore() {
   // directory. Remove it before proving that the standalone Store can support
   // the exact frozen install performed on first launch.
   removeWorkspaceInstallState()
-  runPnpm([
-    'install', '--prod', '--frozen-lockfile', '--offline',
-    '--store-dir', '.xiaohui-pnpm-store',
-  ])
+  runPnpm(frozenOfflineInstallArgs())
   if (process.env.XIAOHUI_KEEP_PREPARED_HARNESS_INSTALL !== '1') {
     removeWorkspaceInstallState()
   }

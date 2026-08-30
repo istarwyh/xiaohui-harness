@@ -14,8 +14,8 @@
       "pythonSourcePath": "packages/harbor-plugin",
       "peerOverrides": {
         "0.7.3": {
-          "@deepseek-ai/dsh-skill": "^0.1.0-rc.6 || ^0.1.1-rc.1",
-          "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || ^0.1.1-rc.1"
+          "@deepseek-ai/dsh-skill": "0.1.1-rc.1",
+          "@deepseek-ai/dsh-tools": "0.1.1-rc.1"
         }
       }
     },
@@ -42,12 +42,29 @@
       }
     },
     {
+      "id": "plugin-marketplace",
+      "kind": "npm-latest",
+      "package": "dsh-plugin-marketplace",
+      "destination": "plugin-marketplace",
+      "peerOverrides": {
+        "0.2.8": {
+          "@deepseek-ai/dsh-llm": "0.1.1-rc.1",
+          "@deepseek-ai/dsh-settings": "0.1.1-rc.1"
+        }
+      }
+    },
+    {
       "id": "context-doctor",
       "kind": "github-branch",
       "repository": "Zhenyu98/dsh-context-doctor",
       "branch": "main",
       "package": "dsh-context-doctor",
-      "destination": "context-doctor"
+      "destination": "context-doctor",
+      "peerOverrides": {
+        "0.6.1": {
+          "@deepseek-ai/dsh-tools": "0.1.1-rc.1"
+        }
+      }
     }
   ]
 }

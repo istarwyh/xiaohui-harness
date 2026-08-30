@@ -1,6 +1,7 @@
 mod chrome;
 mod cli_shim;
 mod desktop_settings;
+mod external_links;
 mod i18n;
 mod notify;
 mod overlay;
@@ -43,6 +44,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             chrome::set_close_action,
             chrome::restart_app,
+            external_links::open_marketplace_url,
             updater::check_for_updates
         ])
         .setup(|app| {

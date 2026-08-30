@@ -1,0 +1,9 @@
+{
+  "formatVersion": 1,
+  "repository": "deepseek-ai/deepseek-harness",
+  "channel": "stable-else-rc",
+  "tagPrefix": "dsh-v",
+  "firstPartyPeerPackages": [
+    "personal-workbench"
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "name": "dsh-personal-workbench",
   "version": "0.1.0",
-  "description": "XiaoHui personal-workbench branding and signed desktop update controls",
+  "description": "XiaoHui workbench branding and desktop application lifecycle controls",
   "type": "module",
   "private": true,
   "main": "index.js",

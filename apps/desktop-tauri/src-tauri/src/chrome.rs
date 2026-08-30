@@ -37,9 +37,8 @@ pub fn request_restart(app: &AppHandle) -> ! {
     app.restart()
 }
 
-/// Webview-facing restart: the plugin store's "重启" button asks for a full
-/// app relaunch (shell + Host), not just a Host restart. Calls through to
-/// `request_restart`, which stops the Host and relaunches this process.
+/// Webview-facing restart for the General application-lifecycle settings card.
+/// Restarts the shell and Host together so installed plugins are rescanned.
 #[tauri::command]
 pub fn restart_app(app: AppHandle) {
     request_restart(&app)

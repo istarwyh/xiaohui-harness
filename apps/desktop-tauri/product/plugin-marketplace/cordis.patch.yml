@@ -1,0 +1,10 @@
+# dsh-plugin-marketplace — bundle patch layer
+#
+# Declares the marketplace as a Cordis loader entry. Shipping this file
+# (and the `dsh.bundle.patch` manifest field) makes the package a standard
+# profile bundle: `dsh plugin --profile <p> add dsh-plugin-marketplace`
+# (and any other bundle-list registration) loads it without the boot-time
+# "declares no dsh.bundle" failure, and the entry mounts automatically.
+- insert:
+    - id: plugin-marketplace
+      name: 'dsh-plugin-marketplace'

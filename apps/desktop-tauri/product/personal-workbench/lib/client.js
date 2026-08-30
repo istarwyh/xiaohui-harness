@@ -262,12 +262,12 @@ function BrandSettingsRow({ scope, t }) {
   ] });
 }
 
-// src/client/ApplicationUpdateRow.tsx
+// src/client/ApplicationLifecycleRow.tsx
 var import_react2 = require("react");
 
-// src/client/desktop-update.ts
-var DESKTOP_UPDATE_CHANNEL = "xiaohui.desktop.update";
-var DESKTOP_UPDATE_VERSION = 1;
+// src/client/desktop-lifecycle.ts
+var DESKTOP_LIFECYCLE_CHANNEL = "xiaohui.desktop.lifecycle";
+var DESKTOP_LIFECYCLE_VERSION = 1;
 var REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 var DEFAULT_HANDSHAKE_TIMEOUT_MS = 5e3;
 function createRequestId() {
@@ -275,17 +275,17 @@ function createRequestId() {
   globalThis.crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
-function isDesktopUpdateAvailable(target = typeof window === "undefined" ? void 0 : window) {
+function isDesktopLifecycleAvailable(target = typeof window === "undefined" ? void 0 : window) {
   return target !== void 0 && target.parent !== target;
 }
-function readDesktopUpdateResponse(value, requestId) {
+function readDesktopLifecycleResponse(value, requestId, action) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return void 0;
   const response = value;
-  if (response.channel !== DESKTOP_UPDATE_CHANNEL || response.version !== DESKTOP_UPDATE_VERSION || response.requestId !== requestId) return void 0;
-  if (response.type === "check-accepted") {
+  if (response.channel !== DESKTOP_LIFECYCLE_CHANNEL || response.version !== DESKTOP_LIFECYCLE_VERSION || response.requestId !== requestId) return void 0;
+  if (response.type === `${action}-accepted`) {
     return Object.keys(response).sort().join(",") === "channel,requestId,type,version" ? response : void 0;
   }
-  if (response.type !== "check-response" || typeof response.ok !== "boolean") return void 0;
+  if (response.type !== `${action}-response` || typeof response.ok !== "boolean") return void 0;
   const expectedKeys = response.ok ? "channel,message,ok,requestId,type,version" : "channel,error,ok,requestId,type,version";
   if (Object.keys(response).sort().join(",") !== expectedKeys) return void 0;
   if (response.ok) {
@@ -295,34 +295,35 @@ function readDesktopUpdateResponse(value, requestId) {
   }
   return response;
 }
-function requestDesktopUpdate(options = {}) {
+function requestDesktopLifecycle(action, options = {}) {
   const target = options.target ?? window;
-  if (!isDesktopUpdateAvailable(target)) {
+  if (!isDesktopLifecycleAvailable(target)) {
     return Promise.reject(new Error("desktop-shell-unavailable"));
   }
   const requestId = options.requestId ?? createRequestId();
   if (!REQUEST_ID_PATTERN.test(requestId)) {
-    return Promise.reject(new Error("desktop-update-request-id-invalid"));
+    return Promise.reject(new Error("desktop-lifecycle-request-id-invalid"));
   }
   return new Promise((resolve, reject) => {
     const parent = target.parent;
     let handshakeTimeout;
     const onMessage = (event) => {
       if (event.source !== parent) return;
-      const response = readDesktopUpdateResponse(event.data, requestId);
+      const response = readDesktopLifecycleResponse(event.data, requestId, action);
       if (response === void 0) return;
-      if (response.type === "check-accepted") {
+      if (response.type === `${action}-accepted`) {
         if (handshakeTimeout !== void 0) target.clearTimeout(handshakeTimeout);
         handshakeTimeout = void 0;
         return;
       }
+      const result = response;
       cleanup();
-      if (response.ok) resolve(response.message ?? "");
-      else reject(new Error(response.error ?? "desktop-update-failed"));
+      if (result.ok) resolve(result.message ?? "");
+      else reject(new Error(result.error ?? `desktop-${action}-failed`));
     };
     handshakeTimeout = target.setTimeout(() => {
       cleanup();
-      reject(new Error("desktop-update-shell-unavailable"));
+      reject(new Error("desktop-shell-unavailable"));
     }, options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS);
     const cleanup = () => {
       if (handshakeTimeout !== void 0) target.clearTimeout(handshakeTimeout);
@@ -331,18 +332,24 @@ function requestDesktopUpdate(options = {}) {
     };
     target.addEventListener("message", onMessage);
     parent.postMessage({
-      channel: DESKTOP_UPDATE_CHANNEL,
-      version: DESKTOP_UPDATE_VERSION,
-      type: "check-request",
+      channel: DESKTOP_LIFECYCLE_CHANNEL,
+      version: DESKTOP_LIFECYCLE_VERSION,
+      type: `${action}-request`,
       requestId
     }, "*");
   });
 }
+function requestDesktopUpdate(options = {}) {
+  return requestDesktopLifecycle("check-update", options);
+}
+function requestDesktopRestart(options = {}) {
+  return requestDesktopLifecycle("restart", options);
+}
 
-// src/client/ApplicationUpdateRow.tsx
+// src/client/ApplicationLifecycleRow.tsx
 var import_jsx_runtime3 = require("react/jsx-runtime");
-function ApplicationUpdateRow({ t }) {
-  const [available] = (0, import_react2.useState)(() => isDesktopUpdateAvailable());
+function ApplicationLifecycleRow({ t }) {
+  const [available] = (0, import_react2.useState)(() => isDesktopLifecycleAvailable());
   const [status, setStatus] = (0, import_react2.useState)("idle");
   const [detail, setDetail] = (0, import_react2.useState)("");
   const check = async () => {
@@ -350,37 +357,63 @@ function ApplicationUpdateRow({ t }) {
     setDetail("");
     try {
       setDetail(await requestDesktopUpdate());
-      setStatus("result");
+      setStatus("update-result");
     } catch (error) {
       setDetail(error instanceof Error ? error.message : String(error));
-      setStatus("error");
+      setStatus("update-error");
     }
   };
-  const busy = status === "checking";
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("section", { className: "dpw-card", "aria-labelledby": "dpw-update-title", children: [
+  const restart = async () => {
+    setStatus("restarting");
+    setDetail("");
+    try {
+      await requestDesktopRestart();
+    } catch (error) {
+      setDetail(error instanceof Error ? error.message : String(error));
+      setStatus("restart-error");
+    }
+  };
+  const busy = status === "checking" || status === "restarting";
+  const shellUnavailable = detail === "desktop-shell-unavailable";
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("section", { className: "dpw-card", "aria-labelledby": "dpw-lifecycle-title", children: [
     /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dpw-heading", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { id: "dpw-update-title", className: "dpw-title", children: t("update.title") }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-description", children: t("update.description") })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { id: "dpw-lifecycle-title", className: "dpw-title", children: t("lifecycle.title") }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-description", children: t("lifecycle.description") })
     ] }),
-    !available && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status", children: t("update.desktop-only") }),
-    busy && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status", role: "status", children: t("update.checking") }),
-    status === "result" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status dpw-success", role: "status", children: detail }),
-    status === "error" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dpw-error", role: "alert", children: [
-      t(detail === "desktop-update-shell-unavailable" ? "update.shell-unavailable" : "update.error"),
-      detail === "desktop-update-shell-unavailable" ? "" : ` ${detail}`
+    !available && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status", children: t("lifecycle.desktop-only") }),
+    status === "checking" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status", role: "status", children: t("lifecycle.update.checking") }),
+    status === "restarting" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status", role: "status", children: t("lifecycle.restart.restarting") }),
+    status === "update-result" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status dpw-success", role: "status", children: detail }),
+    (status === "update-error" || status === "restart-error") && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dpw-error", role: "alert", children: [
+      t(shellUnavailable ? "lifecycle.shell-unavailable" : status === "update-error" ? "lifecycle.update.error" : "lifecycle.restart.error"),
+      shellUnavailable ? "" : ` ${detail}`
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-actions", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-      "button",
-      {
-        type: "button",
-        className: "dpw-button dpw-button-primary",
-        disabled: !available || busy,
-        onClick: () => {
-          void check();
-        },
-        children: t(busy ? "update.checking-action" : "update.action")
-      }
-    ) })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dpw-actions", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "dpw-button dpw-button-primary",
+          disabled: !available || busy,
+          onClick: () => {
+            void check();
+          },
+          children: t(status === "checking" ? "lifecycle.update.checking-action" : "lifecycle.update.action")
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "dpw-button",
+          disabled: !available || busy,
+          onClick: () => {
+            void restart();
+          },
+          children: t(status === "restarting" ? "lifecycle.restart.restarting-action" : "lifecycle.restart.action")
+        }
+      )
+    ] })
   ] });
 }
 
@@ -404,14 +437,18 @@ var zh = {
   "error.name": "\u8BF7\u8F93\u5165\u5DE5\u4F5C\u53F0\u540D\u79F0\u3002",
   "error.read": "\u56FE\u7247\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002",
   "error.save": "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u6587\u4EF6\u540E\u91CD\u8BD5\u3002",
-  "update.title": "\u5E94\u7528\u66F4\u65B0",
-  "update.description": "\u68C0\u67E5\u3001\u4E0B\u8F7D\u5E76\u5B89\u88C5\u7B7E\u540D\u7684 XiaoHui Harness \u6700\u65B0\u7248\u672C\u3002\u4EA7\u54C1\u63D2\u4EF6\u4F1A\u968F\u5E94\u7528\u4E00\u8D77\u66F4\u65B0\uFF0C\u5B89\u88C5\u5B8C\u6210\u540E\u5E94\u7528\u5C06\u81EA\u52A8\u91CD\u542F\u3002",
-  "update.desktop-only": "\u8BF7\u5728 XiaoHui Harness \u684C\u9762\u5E94\u7528\u4E2D\u4F7F\u7528\u6B64\u529F\u80FD\u3002",
-  "update.action": "\u68C0\u67E5\u5E76\u66F4\u65B0",
-  "update.checking-action": "\u6B63\u5728\u68C0\u67E5\u2026",
-  "update.checking": "\u6B63\u5728\u68C0\u67E5\u66F4\u65B0\uFF1B\u5982\u6709\u65B0\u7248\u672C\uFF0C\u5C06\u81EA\u52A8\u4E0B\u8F7D\u5E76\u5B89\u88C5\u3002",
-  "update.shell-unavailable": "\u684C\u9762\u66F4\u65B0\u670D\u52A1\u672A\u54CD\u5E94\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00 XiaoHui Harness \u540E\u91CD\u8BD5\u3002",
-  "update.error": "\u68C0\u67E5\u66F4\u65B0\u5931\u8D25\uFF1A"
+  "lifecycle.title": "\u5E94\u7528\u751F\u547D\u5468\u671F",
+  "lifecycle.description": "\u7BA1\u7406 XiaoHui Harness \u7684\u66F4\u65B0\u4E0E\u91CD\u542F\u3002\u91CD\u542F\u4F1A\u505C\u6B62\u5F53\u524D\u79C1\u6709 Host\uFF0C\u5E76\u5728\u91CD\u65B0\u6253\u5F00\u65F6\u52A0\u8F7D\u65B0\u5B89\u88C5\u7684\u63D2\u4EF6\u3002",
+  "lifecycle.desktop-only": "\u8BF7\u5728 XiaoHui Harness \u684C\u9762\u5E94\u7528\u4E2D\u4F7F\u7528\u8FD9\u4E9B\u529F\u80FD\u3002",
+  "lifecycle.shell-unavailable": "\u684C\u9762\u751F\u547D\u5468\u671F\u670D\u52A1\u672A\u54CD\u5E94\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00 XiaoHui Harness \u540E\u91CD\u8BD5\u3002",
+  "lifecycle.update.action": "\u68C0\u67E5\u5E76\u66F4\u65B0",
+  "lifecycle.update.checking-action": "\u6B63\u5728\u68C0\u67E5\u2026",
+  "lifecycle.update.checking": "\u6B63\u5728\u68C0\u67E5\u66F4\u65B0\uFF1B\u5982\u6709\u65B0\u7248\u672C\uFF0C\u5C06\u81EA\u52A8\u4E0B\u8F7D\u5E76\u5B89\u88C5\u3002",
+  "lifecycle.update.error": "\u68C0\u67E5\u66F4\u65B0\u5931\u8D25\uFF1A",
+  "lifecycle.restart.action": "\u91CD\u542F XiaoHui",
+  "lifecycle.restart.restarting-action": "\u6B63\u5728\u91CD\u542F\u2026",
+  "lifecycle.restart.restarting": "\u6B63\u5728\u505C\u6B62\u79C1\u6709 Host \u5E76\u91CD\u542F XiaoHui\u2026",
+  "lifecycle.restart.error": "\u91CD\u542F\u5931\u8D25\uFF1A"
 };
 var en = {
   "title": "My Workbench",
@@ -432,14 +469,18 @@ var en = {
   "error.name": "Enter a workbench name.",
   "error.read": "The image could not be read. Try again.",
   "error.save": "Could not save. Check the settings document and try again.",
-  "update.title": "Application updates",
-  "update.description": "Check, download, and install the latest signed XiaoHui Harness release. Product plugins update with the app, which restarts after installation.",
-  "update.desktop-only": "Use this action in the XiaoHui Harness desktop application.",
-  "update.action": "Check and update",
-  "update.checking-action": "Checking\u2026",
-  "update.checking": "Checking for updates. A new release will download and install automatically.",
-  "update.shell-unavailable": "The desktop update service did not respond. Reopen XiaoHui Harness and try again.",
-  "update.error": "Update check failed:"
+  "lifecycle.title": "Application lifecycle",
+  "lifecycle.description": "Manage XiaoHui Harness updates and restarts. Restart stops the private Host and loads newly installed plugins when the app opens again.",
+  "lifecycle.desktop-only": "Use these actions in the XiaoHui Harness desktop application.",
+  "lifecycle.shell-unavailable": "The desktop lifecycle service did not respond. Reopen XiaoHui Harness and try again.",
+  "lifecycle.update.action": "Check and update",
+  "lifecycle.update.checking-action": "Checking\u2026",
+  "lifecycle.update.checking": "Checking for updates. A new release will download and install automatically.",
+  "lifecycle.update.error": "Update check failed:",
+  "lifecycle.restart.action": "Restart XiaoHui",
+  "lifecycle.restart.restarting-action": "Restarting\u2026",
+  "lifecycle.restart.restarting": "Stopping the private Host and restarting XiaoHui\u2026",
+  "lifecycle.restart.error": "Restart failed:"
 };
 
 // src/client/styles.ts
@@ -554,10 +595,10 @@ function apply(ctx) {
   }, BrandSettingsRow));
   ctx.slots.inject("settings.general.item", () => ctx.slots.register({
     name: "settings.general.item",
-    id: "application-update",
+    id: "application-lifecycle",
     order: 30,
     locale: SETTINGS_LOCALE_NAMESPACE
-  }, ApplicationUpdateRow));
+  }, ApplicationLifecycleRow));
 }
     return module.exports;
   },
