@@ -40,6 +40,14 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         None::<&str>,
     )
     .map_err(|e| e.to_string())?;
+    let version = MenuItem::with_id(
+        app,
+        "version",
+        i18n::tf(Msg::TrayVersion, &updater::current_version(app)),
+        false,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     let update = MenuItem::with_id(app, "update", i18n::t(Msg::TrayUpdate), true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let restart = MenuItem::with_id(
@@ -68,6 +76,7 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
             &close_exit,
             &close_ask,
             &install_catalog,
+            &version,
             &update,
             &restart,
             &quit,

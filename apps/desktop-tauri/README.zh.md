@@ -27,6 +27,8 @@ Harbor 会在 Job 启动前通过 Host 的 `agentDefaultModel` 与 LLM Service �
 
 桌面壳会通过 `dsh web --no-open` 启动私有 Host。Loopback URL 仍然是 Tauri WebView 加载的内部传输地址，但启动过程不会再把这个 URL 交给操作系统默认浏览器。
 
+Release 构建读取 Tauri 内置的应用语义版本，并在主窗口打开后一次只执行一项带签名的更新检查。稳定的 `xiaohui-updater` manifest 必须声明更高版本，XiaoHui 才会下载内容；检查期限为 15 秒，失败时不改变正在运行的工作台。托盘会显示当前版本，并提供手动检查入口。存在更新时，XiaoHui 会展示当前版本和目标版本，交由 Tauri 验证并安装签名产物，再停止私有 Host 并重启应用。
+
 桌面 Overlay 会给工作台页面注入 Content Security Policy 与 `no-referrer` 策略；Tauri 自有的启动页与 Shell 也配置了 CSP。Cordis 客户端插件需要动态求值，因此工作台保留 `unsafe-eval`，同时禁用 Object 与 Base URL 修改。
 
 ## 命令

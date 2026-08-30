@@ -173,7 +173,7 @@ async fn boot_app(app: AppHandle, bundled: Option<PathBuf>) -> Result<(), String
     boot_log::info("boot complete");
     let app_for_update = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = updater::install_available(&app_for_update, Arc::new(|_| {})).await {
+        if let Err(error) = updater::install_available(&app_for_update).await {
             boot_log::info(&format!("desktop update skipped: {error}"));
         }
     });

@@ -25,6 +25,7 @@ pub enum Msg {
     TrayCloseAsk,
     TrayEnvWindows,
     TrayEnvWsl,
+    TrayVersion,
     TrayUpdate,
     TrayRestart,
     TrayInstallCatalog,
@@ -58,8 +59,6 @@ pub enum Msg {
     StatusDetectWsl,
     StatusPrepareWsl,
     StatusWritePath,
-    StatusCheckUpdate,
-    StatusDownloadUpdate,
     StatusHomeNone,
     StatusHomeMatched,
     StatusHomeRestored,
@@ -83,8 +82,12 @@ pub enum Msg {
     BootRecoverGeneric,
     BootRecoverFailed,
     PluginsDisabled,
+    UpdaterChecking,
     UpdaterDevSkip,
     UpdaterCurrent,
+    UpdaterBusy,
+    UpdaterAvailable,
+    UpdaterRestarting,
     NotifyTitle,
     NotifySessionDone,
     NotifyBody,
@@ -146,6 +149,7 @@ fn zh(msg: Msg) -> &'static str {
         Msg::TrayCloseAsk => "下次关闭时再询问",
         Msg::TrayEnvWindows => "运行环境：Windows",
         Msg::TrayEnvWsl => "运行环境：WSL（需重启）",
+        Msg::TrayVersion => "版本 {0}",
         Msg::TrayUpdate => "检查更新",
         Msg::TrayRestart => "重启",
         Msg::TrayInstallCatalog => "安装插件库",
@@ -179,8 +183,6 @@ fn zh(msg: Msg) -> &'static str {
         Msg::StatusDetectWsl => "正在检测 WSL…",
         Msg::StatusPrepareWsl => "正在准备 WSL 运行环境…",
         Msg::StatusWritePath => "正在写入 dsh 命令并加入 PATH…",
-        Msg::StatusCheckUpdate => "正在检查桌面更新…",
-        Msg::StatusDownloadUpdate => "正在下载桌面更新 {0}…",
         Msg::StatusHomeNone => "已启用 XiaoHui 独立主目录",
         Msg::StatusHomeMatched => "已匹配已有主目录 {0}",
         Msg::StatusHomeRestored => "已恢复 {0} 项历史数据到 {1}",
@@ -210,8 +212,12 @@ fn zh(msg: Msg) -> &'static str {
         Msg::PluginsDisabled => {
             "以下插件已损坏，本次启动已自动禁用：{0}。修复或更新插件后重启即可恢复。"
         }
-        Msg::UpdaterDevSkip => "开发构建不检查桌面更新",
-        Msg::UpdaterCurrent => "当前已是最新版本",
+        Msg::UpdaterChecking => "正在检查更新（当前版本 {0}）",
+        Msg::UpdaterDevSkip => "开发构建 {0} 不检查桌面更新",
+        Msg::UpdaterCurrent => "当前已是最新版本（{0}）",
+        Msg::UpdaterBusy => "已有更新检查或安装正在进行",
+        Msg::UpdaterAvailable => "发现新版本 {1}（当前 {0}），正在下载，安装后应用会自动重启",
+        Msg::UpdaterRestarting => "新版本 {0} 已安装，正在重启",
         Msg::NotifyTitle => "任务完成",
         Msg::NotifySessionDone => "会话 {0} 已完成",
         Msg::NotifyBody => "XiaoHui Harness 已完成本轮任务",
@@ -232,6 +238,7 @@ fn en(msg: Msg) -> &'static str {
         Msg::TrayCloseAsk => "Ask next time on close",
         Msg::TrayEnvWindows => "Runtime: Windows",
         Msg::TrayEnvWsl => "Runtime: WSL (restart required)",
+        Msg::TrayVersion => "Version {0}",
         Msg::TrayUpdate => "Check for updates",
         Msg::TrayRestart => "Restart",
         Msg::TrayInstallCatalog => "Install plugin catalog",
@@ -267,8 +274,6 @@ fn en(msg: Msg) -> &'static str {
         Msg::StatusDetectWsl => "Detecting WSL…",
         Msg::StatusPrepareWsl => "Preparing the WSL runtime…",
         Msg::StatusWritePath => "Writing the dsh command and updating PATH…",
-        Msg::StatusCheckUpdate => "Checking for desktop updates…",
-        Msg::StatusDownloadUpdate => "Downloading desktop update {0}…",
         Msg::StatusHomeNone => "Using XiaoHui's isolated home",
         Msg::StatusHomeMatched => "Matched existing home {0}",
         Msg::StatusHomeRestored => "Restored {0} history items into {1}",
@@ -308,8 +313,14 @@ fn en(msg: Msg) -> &'static str {
         Msg::PluginsDisabled => {
             "These plugins failed to load and were disabled for this launch: {0}. Restart after you repair or update them."
         }
-        Msg::UpdaterDevSkip => "Dev builds do not check for desktop updates",
-        Msg::UpdaterCurrent => "You are already on the latest version",
+        Msg::UpdaterChecking => "Checking for updates (current version {0})",
+        Msg::UpdaterDevSkip => "Development build {0} does not check for desktop updates",
+        Msg::UpdaterCurrent => "You are on the latest version ({0})",
+        Msg::UpdaterBusy => "An update check or installation is already running",
+        Msg::UpdaterAvailable => {
+            "Version {1} is available (current {0}); downloading now and restarting after installation"
+        }
+        Msg::UpdaterRestarting => "Version {0} is installed; restarting",
         Msg::NotifyTitle => "Task complete",
         Msg::NotifySessionDone => "Session {0} finished",
         Msg::NotifyBody => "XiaoHui Harness finished this turn",
@@ -324,7 +335,7 @@ fn en(msg: Msg) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{locale_from_tag, t, tf, Locale, Msg};
+    use super::{locale_from_tag, t, tf, tf2, Locale, Msg};
 
     #[test]
     fn tests_default_to_chinese() {
@@ -339,6 +350,15 @@ mod tests {
     #[test]
     fn interpolates_named_distro() {
         assert!(tf(Msg::WslNamedMissing, "Debian").contains("Debian"));
+    }
+
+    #[test]
+    fn update_copy_reports_current_and_target_versions() {
+        assert_eq!(tf(Msg::TrayVersion, "0.2.6"), "版本 0.2.6");
+        assert_eq!(
+            tf2(Msg::UpdaterAvailable, "0.2.6", "0.2.7"),
+            "发现新版本 0.2.7（当前 0.2.6），正在下载，安装后应用会自动重启"
+        );
     }
 
     #[test]

@@ -27,6 +27,8 @@ The application prepends its private `dsh`, Node, and pnpm shims only to the Hos
 
 The desktop shell launches its private Host with `dsh web --no-open`. The loopback URL remains the internal transport loaded by the Tauri WebView, but startup never hands that URL to the operating system's default browser.
 
+Release builds read the semantic application version embedded by Tauri and run one signed update check at a time after the main window opens. The stable `xiaohui-updater` manifest must advertise a higher version before XiaoHui downloads anything; the check has a 15-second deadline, while a failure leaves the running workbench unchanged. The tray shows the current version and supports a manual check. When an update is available, XiaoHui announces the current and target versions, lets Tauri verify and install the signed artifact, stops the private Host, and restarts the application.
+
 The desktop overlay injects a Content Security Policy and no-referrer policy into the served workbench. The Tauri-owned splash and shell also have a CSP; the workbench keeps `unsafe-eval` because Cordis client plugins are evaluated dynamically, while objects and base-URL mutation remain disabled.
 
 ## Commands

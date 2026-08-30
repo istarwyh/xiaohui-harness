@@ -20,7 +20,7 @@ Status: implemented
 
 [XiaoHui 产品化 AI 工作台发行](2026-08-22-xiaohui-product-workbench.zh.md)把产品发布收窄为 macOS arm64 与独立的 `xiaohui-updater` 通道，同时保留本记录中的预配机制。
 
-**Release 构建在主窗口打开后再检查并安装更新。** 官方 Tauri updater 验证稳定 manifest 和产物签名，安装语义版本更高的版本并重启应用。更新检查或下载失败会写入日志，不拖住启动页。开发构建跳过网络更新检查。运行时 manifest 已就绪且仍指向可用的 Node / pnpm 时，跳过主机工具链扫描、源码释放和 `pnpm install`，并用文件大小比对 Node，不再对 `node.exe` 做 SHA256（[重复启动跳过](../bug-fix/2026-08-17-desktop-repeat-boot-host-toolchain.zh.md)）。
+**Release 构建在主窗口打开后再检查并安装更新。** 自动检查或托盘触发的检查一次只运行一项，manifest 请求带有 15 秒期限，因此失败或缓慢的网络不会拖住启动页或正在使用的工作台。官方 Tauri updater 会比较内置应用版本与稳定 manifest，只接受更高的语义版本，再验证产物签名、安装更新、停止私有 Host 并重启应用。托盘显示内置版本；手动检查在应用已是最新版本时报告该版本，存在更新时则在下载前展示当前版本和目标版本。检查或下载失败会写入日志，但不会关闭工作台。开发构建跳过网络更新检查。运行时 manifest 已就绪且仍指向可用的 Node / pnpm 时，跳过主机工具链扫描、源码释放和 `pnpm install`，并用文件大小比对 Node，不再对 `node.exe` 做 SHA256（[重复启动跳过](../bug-fix/2026-08-17-desktop-repeat-boot-host-toolchain.zh.md)）。
 
 **Windows 安装会关闭运行中的应用，并使陈旧快捷方式图标失效。** NSIS 预安装钩子在复制文件前结束 `dsh-desktop.exe` 及其子进程树。安装后钩子保留用户对桌面快捷方式的选择，使用文件名含版本的独立 ICO 资源重建已有快捷方式，并通知 Explorer 图标关联已变化。
 
