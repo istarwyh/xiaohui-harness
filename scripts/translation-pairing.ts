@@ -172,10 +172,11 @@ export const TRANSLATION_SCOPE_GLOB_EXCLUDES = [
   // Desktop installer source bundle: a generated copy of the trimmed harness
   // tree whose out-of-context relative links have no corpus counterparts.
   'apps/desktop-tauri/bundled/**',
-  // Exact published npm snapshots retain their upstream documentation and are
+  // Exact external plugin snapshots retain their upstream documentation and are
   // protected by XIAOHUI_UPSTREAM.json rather than XiaoHui translation records.
   'apps/desktop-tauri/product/dsh-better-sidebar/**',
   'apps/desktop-tauri/product/dsh-codex-auth/**',
+  'apps/desktop-tauri/product/context-doctor/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-*/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/**',
   'vendor/**',

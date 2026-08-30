@@ -1,0 +1,53 @@
+{
+  "formatVersion": 1,
+  "managedNodeVersion": "22.19.0",
+  "plugins": [
+    {
+      "id": "harbor-evolution",
+      "kind": "github-release-pair",
+      "repository": "istarwyh/harbor-self-evolving",
+      "package": "dsh-harbor-evolution",
+      "destination": "harbor-evolution",
+      "sourcePath": "packages/dsh-plugin",
+      "pythonPackage": "harbor-dsh-evolution",
+      "pythonDestination": "harbor-python",
+      "pythonSourcePath": "packages/harbor-plugin",
+      "peerOverrides": {
+        "0.7.3": {
+          "@deepseek-ai/dsh-skill": "^0.1.0-rc.6 || ^0.1.1-rc.1",
+          "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || ^0.1.1-rc.1"
+        }
+      }
+    },
+    {
+      "id": "codex-auth",
+      "kind": "npm-latest",
+      "package": "dsh-codex-auth",
+      "destination": "dsh-codex-auth",
+      "peerOverrides": {
+        "0.3.1": {
+          "@deepseek-ai/dsh-*": "0.1.1-rc.1"
+        }
+      }
+    },
+    {
+      "id": "better-sidebar",
+      "kind": "npm-latest",
+      "package": "dsh-better-sidebar",
+      "destination": "dsh-better-sidebar",
+      "peerOverrides": {
+        "0.17.1": {
+          "@deepseek-ai/dsh-*": "0.1.1-rc.1"
+        }
+      }
+    },
+    {
+      "id": "context-doctor",
+      "kind": "github-branch",
+      "repository": "Zhenyu98/dsh-context-doctor",
+      "branch": "main",
+      "package": "dsh-context-doctor",
+      "destination": "context-doctor"
+    }
+  ]
+}

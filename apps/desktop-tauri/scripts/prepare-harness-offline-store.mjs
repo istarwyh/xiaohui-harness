@@ -38,6 +38,23 @@ function runPnpm(args) {
   }
 }
 
+/** Remove pnpm install links while preserving the standalone offline Store. */
+export function removeWorkspaceInstallState(root = harnessRoot) {
+  const walk = current => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const path = join(current, entry.name)
+      if (entry.name === 'node_modules') {
+        rmSync(path, { recursive: true, force: true })
+      }
+      else if (entry.name !== '.xiaohui-pnpm-store') {
+        walk(path)
+      }
+    }
+  }
+  walk(root)
+}
+
 /** Deterministic digest of a generated directory tree. */
 export function hashTree(root) {
   const hasher = createHash('sha256')
@@ -201,9 +218,16 @@ export function prepareHarnessOfflineStore() {
     '--network-concurrency', '4', '--fetch-retries', '5', '--fetch-retry-maxtimeout', '60000',
   ])
   // `pnpm fetch` materializes a virtual store under node_modules as a working
-  // directory. Runtime install must reconstruct it from the shipped store;
-  // packaging this tree would duplicate bytes and preserve platform symlinks.
-  rmSync(join(harnessRoot, 'node_modules'), { recursive: true, force: true })
+  // directory. Remove it before proving that the standalone Store can support
+  // the exact frozen install performed on first launch.
+  removeWorkspaceInstallState()
+  runPnpm([
+    'install', '--prod', '--frozen-lockfile', '--offline',
+    '--store-dir', '.xiaohui-pnpm-store',
+  ])
+  if (process.env.XIAOHUI_KEEP_PREPARED_HARNESS_INSTALL !== '1') {
+    removeWorkspaceInstallState()
+  }
 
   const finalized = packageExistingOfflineStore()
   saveOfflineStoreCache(lockSha256, finalized)

@@ -32,6 +32,11 @@ const productPlugins = [
     destination: join('packages', 'product', 'dsh-better-sidebar'),
   },
   {
+    name: 'dsh-context-doctor',
+    root: join(desktopRoot, 'product', 'context-doctor'),
+    destination: join('packages', 'product', 'context-doctor'),
+  },
+  {
     name: 'dsh-personal-workbench',
     root: join(desktopRoot, 'product', 'personal-workbench'),
     destination: join('packages', 'product', 'personal-workbench'),
@@ -166,8 +171,8 @@ function hashBundledContent(trimmedWorkspace, bundlePkg, productLock) {
   return hasher.digest('hex')
 }
 
-/** Hash an extracted npm artifact without its XiaoHui provenance sidecar. */
-export function hashPublishedSnapshot(root) {
+/** Hash an external plugin snapshot without its XiaoHui provenance sidecar. */
+export function hashExternalSnapshot(root) {
   const hasher = createHash('sha256')
 
   /** @param {string} current @param {string} prefix */
@@ -179,7 +184,7 @@ export function hashPublishedSnapshot(root) {
       const path = join(current, entry.name)
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name
       if (entry.isSymbolicLink()) {
-        throw new Error(`published plugin snapshot must not contain symlinks: ${rel}`)
+        throw new Error(`external plugin snapshot must not contain symlinks: ${rel}`)
       }
       if (entry.isDirectory()) {
         walk(path, rel)
@@ -197,8 +202,8 @@ export function hashPublishedSnapshot(root) {
   return hasher.digest('hex')
 }
 
-/** Verify the committed package still matches its reviewed published snapshot. */
-function verifyPublishedSnapshot(root, manifest) {
+/** Verify the committed package still matches its reviewed external snapshot. */
+export function verifyExternalSnapshot(root, manifest) {
   const provenancePath = join(root, 'XIAOHUI_UPSTREAM.json')
   if (!existsSync(provenancePath)) return
   const provenance = JSON.parse(readFileSync(provenancePath, 'utf8'))
@@ -210,7 +215,7 @@ function verifyPublishedSnapshot(root, manifest) {
   if (!/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(provenance.integrity ?? '')) {
     throw new Error(`XiaoHui product integrity is invalid: ${manifest.name}`)
   }
-  const actual = hashPublishedSnapshot(root)
+  const actual = hashExternalSnapshot(root)
   if (actual !== provenance.treeSha256) {
     throw new Error(
       `XiaoHui product snapshot hash mismatch for ${manifest.name}: expected ${provenance.treeSha256}, found ${actual}`,
@@ -276,7 +281,7 @@ export function installProductPlugins(bundleRoot) {
     if (manifest.dsh?.bundle?.patch !== './cordis.patch.yml') {
       throw new Error(`XiaoHui product plugin has no DSH bundle patch: ${plugin.name}`)
     }
-    verifyPublishedSnapshot(plugin.root, manifest)
+    verifyExternalSnapshot(plugin.root, manifest)
 
     copyTree(plugin.root, join(bundleRoot, plugin.destination))
     manifests.push(manifest)

@@ -21,6 +21,7 @@ const MANAGED_PRODUCT_LINKS: &[(&str, &str)] = &[
     ("dsh-harbor-evolution", "packages/product/harbor-evolution"),
     ("dsh-codex-auth", "packages/product/dsh-codex-auth"),
     ("dsh-better-sidebar", "packages/product/dsh-better-sidebar"),
+    ("dsh-context-doctor", "packages/product/context-doctor"),
     (
         "dsh-personal-workbench",
         "packages/product/personal-workbench",
@@ -343,22 +344,34 @@ mod tests {
         let profile = dsh_home.join("profiles").join("web");
         let current = root.join("harness-versions").join("current");
         let current_plugin = current.join("packages/product/harbor-evolution");
+        let current_context_doctor = current.join("packages/product/context-doctor");
         let old_plugin = root
             .join("harness-versions")
             .join("old")
             .join("packages/product/harbor-evolution");
+        let old_context_doctor = root
+            .join("harness-versions")
+            .join("old")
+            .join("packages/product/context-doctor");
         fs::create_dir_all(&profile).unwrap();
         fs::create_dir_all(&current_plugin).unwrap();
+        fs::create_dir_all(&current_context_doctor).unwrap();
         fs::write(
             current_plugin.join("package.json"),
             r#"{"name":"dsh-harbor-evolution"}"#,
         )
         .unwrap();
         fs::write(
+            current_context_doctor.join("package.json"),
+            r#"{"name":"dsh-context-doctor"}"#,
+        )
+        .unwrap();
+        fs::write(
             profile.join("package.json"),
             format!(
-                "{{\"dependencies\":{{\"dsh-harbor-evolution\":\"link:{}\",\"third-party\":\"link:/tmp/third-party\"}}}}",
-                old_plugin.display()
+                "{{\"dependencies\":{{\"dsh-harbor-evolution\":\"link:{}\",\"dsh-context-doctor\":\"link:{}\",\"third-party\":\"link:/tmp/third-party\"}}}}",
+                old_plugin.display(),
+                old_context_doctor.display()
             ),
         )
         .unwrap();
@@ -381,6 +394,10 @@ mod tests {
         assert_eq!(
             value["dependencies"]["dsh-harbor-evolution"],
             format!("link:{}", current_plugin.display())
+        );
+        assert_eq!(
+            value["dependencies"]["dsh-context-doctor"],
+            format!("link:{}", current_context_doctor.display())
         );
         assert_eq!(
             value["dependencies"]["third-party"],

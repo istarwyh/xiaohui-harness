@@ -1,7 +1,7 @@
 {
   "name": "dsh-personal-workbench",
   "version": "0.1.0",
-  "description": "A small DeepSeek Harness plugin for naming and branding a personal workbench",
+  "description": "XiaoHui personal-workbench branding and signed desktop update controls",
   "type": "module",
   "private": true,
   "main": "index.js",

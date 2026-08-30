@@ -14,7 +14,68 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { makePythonEntryPointRelocatable, sourceDigest } from './prepare-xiaohui-runtime.mjs'
+import {
+  deriveHarborIntegrationVersion,
+  makePythonEntryPointRelocatable,
+  readPythonProjectMetadata,
+  sourceDigest,
+} from './prepare-xiaohui-runtime.mjs'
+
+test('readPythonProjectMetadata reads only the project table', () => {
+  const metadata = readPythonProjectMetadata(`
+[tool.fixture]
+name = "ignored"
+version = "9.9.9"
+
+[project] # package metadata
+name = 'harbor-dsh-evolution'
+version = "1.2.3" # release version
+
+[project.urls]
+name = "also ignored"
+`)
+
+  assert.deepEqual(metadata, { name: 'harbor-dsh-evolution', version: '1.2.3' })
+})
+
+test('readPythonProjectMetadata rejects incomplete project metadata', () => {
+  assert.throws(
+    () => readPythonProjectMetadata('[project]\nname = "harbor-dsh-evolution"\n'),
+    /\[project]\.version missing/,
+  )
+})
+
+test('deriveHarborIntegrationVersion requires matching Node and Python snapshots', () => {
+  const root = mkdtempSync(join(tmpdir(), 'xiaohui-harbor-version-'))
+  const nodeManifestPath = join(root, 'package.json')
+  const pythonProjectPath = join(root, 'pyproject.toml')
+  try {
+    writeFileSync(
+      nodeManifestPath,
+      '{"name":"dsh-harbor-evolution","version":"1.2.3"}\n',
+    )
+    writeFileSync(
+      pythonProjectPath,
+      '[project]\nname = "harbor-dsh-evolution"\nversion = "1.2.3"\n',
+    )
+    assert.equal(
+      deriveHarborIntegrationVersion({ nodeManifestPath, pythonProjectPath }),
+      '1.2.3',
+    )
+
+    writeFileSync(
+      pythonProjectPath,
+      '[project]\nname = "harbor-dsh-evolution"\nversion = "1.2.4"\n',
+    )
+    assert.throws(
+      () => deriveHarborIntegrationVersion({ nodeManifestPath, pythonProjectPath }),
+      /Harbor product versions differ/,
+    )
+  }
+  finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('Python entry points resolve PYTHONHOME after the runtime moves', {
   skip: process.platform === 'win32',

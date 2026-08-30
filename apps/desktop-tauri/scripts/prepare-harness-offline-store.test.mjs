@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
   finalizeOfflineManifest,
   hashTree,
+  removeWorkspaceInstallState,
   validateOfflineStoreCache,
 } from './prepare-harness-offline-store.mjs'
 
@@ -60,4 +61,21 @@ test('validateOfflineStoreCache rejects stale or corrupted release caches', () =
   assert.throws(() => validateOfflineStoreCache(metadata, 'd'.repeat(64), archive), /lockfile digest/)
   assert.throws(() => validateOfflineStoreCache(metadata, lock, 'e'.repeat(64)), /archive digest/)
   assert.throws(() => validateOfflineStoreCache({ ...metadata, files: 10 }, lock, archive), /file count/)
+})
+
+test('workspace install cleanup preserves the standalone offline Store', () => {
+  const root = mkdtempSync(join(tmpdir(), 'xiaohui-install-state-'))
+  try {
+    mkdirSync(join(root, 'node_modules', '.pnpm'), { recursive: true })
+    mkdirSync(join(root, 'packages', 'product', 'plugin', 'node_modules', 'dependency'), { recursive: true })
+    mkdirSync(join(root, '.xiaohui-pnpm-store', 'v10', 'files'), { recursive: true })
+    writeFileSync(join(root, '.xiaohui-pnpm-store', 'v10', 'files', 'kept'), 'store')
+    removeWorkspaceInstallState(root)
+    assert.equal(existsSync(join(root, 'node_modules')), false)
+    assert.equal(existsSync(join(root, 'packages', 'product', 'plugin', 'node_modules')), false)
+    assert.equal(existsSync(join(root, '.xiaohui-pnpm-store', 'v10', 'files', 'kept')), true)
+  }
+  finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

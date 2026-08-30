@@ -291,9 +291,59 @@
       hide() { setClosePrompt(false) },
     }
 
+    const appFrame = document.getElementById('app')
+    const desktopUpdateChannel = 'xiaohui.desktop.update'
+    const desktopUpdateVersion = 1
+    const desktopUpdateRequestId = /^[A-Za-z0-9_-]{1,64}$/
+    let embeddedOrigin
+    try {
+      embeddedOrigin = new URL(window.__DSH_WEB_URL__).origin
+    }
+    catch {
+      embeddedOrigin = undefined
+    }
+
+    function isDesktopUpdateRequest(value) {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+      const keys = Object.keys(value).sort()
+      if (keys.join(',') !== 'channel,requestId,type,version') return false
+      return value.channel === desktopUpdateChannel
+        && value.version === desktopUpdateVersion
+        && value.type === 'check-request'
+        && typeof value.requestId === 'string'
+        && desktopUpdateRequestId.test(value.requestId)
+    }
+
+    window.addEventListener('message', async (event) => {
+      const embeddedWindow = appFrame.contentWindow
+      if (embeddedOrigin === undefined || embeddedWindow === null) return
+      if (event.source !== embeddedWindow || event.origin !== embeddedOrigin) return
+      if (!isDesktopUpdateRequest(event.data)) return
+
+      const response = {
+        channel: desktopUpdateChannel,
+        version: desktopUpdateVersion,
+        requestId: event.data.requestId,
+      }
+      embeddedWindow.postMessage({ ...response, type: 'check-accepted' }, embeddedOrigin)
+      try {
+        const invoke = window.__TAURI__?.core?.invoke
+        if (typeof invoke !== 'function') throw new Error('Desktop update bridge is unavailable')
+        response.type = 'check-response'
+        response.ok = true
+        response.message = await invoke('check_for_updates')
+      }
+      catch (error) {
+        response.type = 'check-response'
+        response.ok = false
+        response.error = String(error instanceof Error ? error.message : error).slice(0, 2048)
+      }
+      embeddedWindow.postMessage(response, embeddedOrigin)
+    })
+
     async function boot() {
       const url = window.__DSH_WEB_URL__
-      if (url) document.getElementById('app').src = url
+      if (url) appFrame.src = url
       const layout = window.__DSH_CHROME__ || {
         os: 'windows',
         titlebar_height: 36,

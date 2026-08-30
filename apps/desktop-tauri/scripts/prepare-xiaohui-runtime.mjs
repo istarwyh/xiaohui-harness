@@ -21,13 +21,16 @@ import {
 } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parse as parseToml } from 'smol-toml'
+
+import { verifyExternalSnapshot } from './bundle-harness-source.mjs'
 
 const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const outRoot = join(desktopRoot, 'bundled', 'xiaohui-runtime')
 const manifestPath = join(outRoot, 'manifest.json')
 const pythonVersion = '3.12.14'
-const integrationVersion = '0.7.3'
 const vendoredPythonSource = join(desktopRoot, 'product', 'harbor-python')
+const vendoredNodeManifest = join(desktopRoot, 'product', 'harbor-evolution', 'package.json')
 const ignoredSourceDirectories = new Set(['.git', '.pytest_cache', '.venv', '__pycache__', 'dist'])
 const ignoredSourceFiles = new Set(['.DS_Store', 'uv.lock'])
 
@@ -37,6 +40,77 @@ function run(command, args) {
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status ?? 1}`)
   }
+}
+
+/**
+ * Parse the name and version declared by a Python project's `[project]` table.
+ *
+ * @param {string} source
+ * @param {string} [sourceLabel]
+ * @returns {{ name: string, version: string }}
+ */
+export function readPythonProjectMetadata(source, sourceLabel = 'pyproject.toml') {
+  let document
+  try {
+    document = parseToml(source)
+  }
+  catch (error) {
+    throw new Error(`invalid TOML in ${sourceLabel}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  const project = document.project
+  if (!project || typeof project !== 'object' || Array.isArray(project)) {
+    throw new Error(`[project] table missing in ${sourceLabel}`)
+  }
+  if (typeof project.name !== 'string' || project.name.length === 0) {
+    throw new Error(`[project].name missing in ${sourceLabel}`)
+  }
+  if (typeof project.version !== 'string' || project.version.length === 0) {
+    throw new Error(`[project].version missing in ${sourceLabel}`)
+  }
+  return { name: project.name, version: project.version }
+}
+
+/**
+ * Read the paired XiaoHui Harbor snapshots and return their shared version.
+ *
+ * @param {object} [paths]
+ * @param {string} [paths.nodeManifestPath]
+ * @param {string} [paths.pythonProjectPath]
+ * @returns {string}
+ */
+export function deriveHarborIntegrationVersion({
+  nodeManifestPath = vendoredNodeManifest,
+  pythonProjectPath = join(vendoredPythonSource, 'pyproject.toml'),
+} = {}) {
+  let nodeManifest
+  try {
+    nodeManifest = JSON.parse(readFileSync(nodeManifestPath, 'utf8'))
+  }
+  catch (error) {
+    throw new Error(
+      `invalid Harbor Node manifest ${nodeManifestPath}: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  if (nodeManifest.name !== 'dsh-harbor-evolution') {
+    throw new Error(`expected dsh-harbor-evolution, found ${String(nodeManifest.name || 'unnamed package')}`)
+  }
+  if (typeof nodeManifest.version !== 'string' || nodeManifest.version.length === 0) {
+    throw new Error(`dsh-harbor-evolution version missing: ${nodeManifestPath}`)
+  }
+
+  const pythonProject = readPythonProjectMetadata(
+    readFileSync(pythonProjectPath, 'utf8'),
+    pythonProjectPath,
+  )
+  if (pythonProject.name !== 'harbor-dsh-evolution') {
+    throw new Error(`expected harbor-dsh-evolution, found ${pythonProject.name}`)
+  }
+  if (pythonProject.version !== nodeManifest.version) {
+    throw new Error(
+      `Harbor product versions differ: dsh-harbor-evolution@${nodeManifest.version} and harbor-dsh-evolution@${pythonProject.version}`,
+    )
+  }
+  return nodeManifest.version
 }
 
 export function sourceDigest(root) {
@@ -60,9 +134,9 @@ export function sourceDigest(root) {
   return hash.digest('hex')
 }
 
-function runtimeId(pythonSpec, sourceId) {
+function runtimeId(pythonSpec, sourceId, integrationVersion) {
   return createHash('sha256')
-    .update(JSON.stringify({ layoutVersion: 2, platform: process.platform, arch: process.arch, pythonVersion, pythonSpec, sourceId }))
+    .update(JSON.stringify({ layoutVersion: 2, platform: process.platform, arch: process.arch, pythonVersion, pythonSpec, sourceId, integrationVersion }))
     .digest('hex')
 }
 
@@ -121,8 +195,27 @@ function main() {
   if (!override && !existsSync(join(vendoredPythonSource, 'pyproject.toml'))) {
     throw new Error(`vendored Harbor Python source missing: ${vendoredPythonSource}`)
   }
-  const sourceId = override ? override : sourceDigest(vendoredPythonSource)
-  const id = runtimeId(pythonSpec, sourceId)
+  const overrideProject = override ? join(resolve(override), 'pyproject.toml') : undefined
+  const overrideMetadata = overrideProject && existsSync(overrideProject)
+    ? readPythonProjectMetadata(readFileSync(overrideProject, 'utf8'), overrideProject)
+    : undefined
+  if (overrideMetadata && overrideMetadata.name !== 'harbor-dsh-evolution') {
+    throw new Error(`expected harbor-dsh-evolution, found ${overrideMetadata.name}`)
+  }
+  const integrationVersion = overrideMetadata?.version
+    || (override ? 'override' : deriveHarborIntegrationVersion())
+  if (!override) {
+    const provenancePath = join(vendoredPythonSource, 'XIAOHUI_UPSTREAM.json')
+    if (!existsSync(provenancePath)) {
+      throw new Error(`vendored Harbor Python provenance missing: ${provenancePath}`)
+    }
+    verifyExternalSnapshot(vendoredPythonSource, {
+      name: 'harbor-dsh-evolution',
+      version: integrationVersion,
+    })
+  }
+  const sourceId = overrideMetadata ? sourceDigest(resolve(override)) : (override || sourceDigest(vendoredPythonSource))
+  const id = runtimeId(pythonSpec, sourceId, integrationVersion)
   const current = readManifest()
   if (current?.runtimeId === id
     && existsSync(join(outRoot, 'venv', 'bin', 'harbor'))

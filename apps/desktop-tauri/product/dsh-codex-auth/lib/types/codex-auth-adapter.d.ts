@@ -45,6 +45,10 @@ export declare const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS = 5000;
 export declare const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
 /** rc1's default maximum encoded image payload for one pi-ai request. */
 export declare const MAX_REQUEST_IMAGE_BYTES: number;
+/** Default maximum pixel count for one normalized request image. */
+export declare const REQUEST_IMAGE_PIXEL_BUDGET: number;
+/** Default maximum encoded byte length for one normalized request image. */
+export declare const REQUEST_IMAGE_MAX_BYTES: number;
 /**
  * Codex owns authentication in the Host-side coordinator and injects its token
  * through `resolveApiKey` for each request. Pi-ai's login/storage surface must

@@ -1,0 +1,14 @@
+{
+  "package": "dsh-context-doctor",
+  "version": "0.6.1",
+  "source": "https://codeload.github.com/Zhenyu98/dsh-context-doctor/tar.gz/f45096dc7a7ad52cfa7cf32cdaccae717faa662d",
+  "commit": "f45096dc7a7ad52cfa7cf32cdaccae717faa662d",
+  "integrity": "sha512-cnKLE6Bm6cu/zBhleEocHM1NKRNtPytOcc3pHEtCuDysn1PWG8UG9IcAOWyiEmBdYhxQ92mvIPJbarKtuK90Rw==",
+  "archiveSha256": "f5aeaad6be5346fe2c636c0b3d4f29794a1048211192b24fe4d9572a00bf09d6",
+  "snapshotMethod": "npm pack file selection from the pinned GitHub commit",
+  "upstreamTreeSha256": "9edab5dfebff3914b7bb57533a0aedad3a9de8bf567b69313f7f77fdbc5c42ee",
+  "treeSha256": "9edab5dfebff3914b7bb57533a0aedad3a9de8bf567b69313f7f77fdbc5c42ee",
+  "patches": [],
+  "repository": "https://github.com/Zhenyu98/dsh-context-doctor",
+  "license": "BSD-3-Clause"
+}

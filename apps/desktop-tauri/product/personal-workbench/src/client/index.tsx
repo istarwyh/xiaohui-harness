@@ -1,4 +1,4 @@
-/** Browser half: settings card plus live brand-slot occupants. */
+/** Browser half: settings cards plus live brand-slot occupants. */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -19,6 +19,7 @@ import {
 import {
   BrandSettingsRow, type BrandSettingsRowInjected,
 } from './BrandSettingsRow.tsx'
+import { ApplicationUpdateRow } from './ApplicationUpdateRow.tsx'
 import { en, zh, type PersonalWorkbenchKey } from './locales.ts'
 import { installPersonalWorkbenchStyles } from './styles.ts'
 
@@ -122,7 +123,7 @@ export function installPersonalBrandOccupants(
   installBrandSlot(ctx, scope, 'sidebar.brand.name', pickName)
 }
 
-/** Register the settings card and brand occupants. */
+/** Register the settings cards and brand occupants. */
 export function apply(ctx: ClientContext): void {
   installPersonalWorkbenchStyles(ctx as Context)
   const scope = ctx.settingsScope.bind<WorkbenchSettingsValue>({
@@ -141,7 +142,14 @@ export function apply(ctx: ClientContext): void {
     locale: SETTINGS_LOCALE_NAMESPACE,
     inject: (): BrandSettingsRowInjected => ({ scope }),
   }, BrandSettingsRow))
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'application-update',
+    order: 30,
+    locale: SETTINGS_LOCALE_NAMESPACE,
+  }, ApplicationUpdateRow))
 }
 
+export type { ApplicationUpdateRowProps } from './ApplicationUpdateRow.tsx'
 export type { BrandSettingsRowProps } from './BrandSettingsRow.tsx'
 export type PersonalBrandSettingsLocaleProps = PropsLocale<'settings.personal-workbench'>

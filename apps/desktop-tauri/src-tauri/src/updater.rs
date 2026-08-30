@@ -79,6 +79,16 @@ pub async fn check_now(app: &AppHandle) -> Result<String, String> {
         .map(|outcome| outcome.message())
 }
 
+/// Run the signed stable-channel update flow for a validated shell request.
+///
+/// Returns a localized current, development, or busy status when no install
+/// starts. A successful install stops the private Host, restarts the desktop
+/// process, and does not return.
+#[tauri::command]
+pub async fn check_for_updates(app: AppHandle) -> Result<String, String> {
+    check_now(&app).await
+}
+
 async fn check_and_install(app: &AppHandle) -> Result<UpdateOutcome, String> {
     let current = current_version(app);
     if cfg!(debug_assertions) {

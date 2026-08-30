@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This XiaoHui Harness product plugin lets a user replace the sidebar workbench name and Logo from **Settings → General → My Workbench**. The card previews the draft before applying it. **Restore XiaoHui default** disables the custom slot occupants, so the host shell renders its own fallback again.
+This first-party XiaoHui Harness product plugin owns two General settings cards. **Settings → General → My Workbench** lets a user replace the sidebar workbench name and Logo, preview the draft, and restore the XiaoHui fallback. **Settings → General → Application updates → Check and update** asks the trusted desktop shell to run the signed application updater. The update action is visible but disabled in standalone `dsh web`; it never refreshes plugin source on an end-user machine, because bundled product plugins advance with the signed application release.
 
 The settings are stored in the current DSH Profile under the `personal-workbench` namespace:
 
@@ -27,3 +27,4 @@ None; changing the workbench identity does not assemble or send a provider reque
 
 - **One Profile owns one custom identity** — the plugin does not select different branding per Workspace or Session.
 - **Only the declared brand slots change** — browser title, desktop icon, themes, fonts, wallpapers, and global text remain owned by their existing surfaces.
+- **Application updates are desktop-only** — the workbench Client can request the fixed signed flow but cannot choose an update URL, version, or Tauri command.

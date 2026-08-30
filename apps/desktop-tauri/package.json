@@ -1,12 +1,14 @@
 {
   "name": "xiaohui-harness-desktop",
   "productName": "XiaoHui Harness",
-  "description": "A macOS AI workbench with DeepSeek Harness, Harbor Evolution, Codex Auth, Better Sidebar, Personal Workbench branding, and bundled Skills",
+  "description": "A macOS AI workbench with DeepSeek Harness, Harbor Evolution, Codex Auth, Better Sidebar, Context Doctor, Personal Workbench branding, and bundled Skills",
   "version": "0.2.6",
   "private": true,
   "type": "module",
   "scripts": {
     "bundle:source": "node scripts/bundle-harness-source.mjs",
+    "refresh:product-plugins": "node scripts/refresh-product-plugins.mjs",
+    "prepare:release": "node scripts/prepare-release.mjs",
     "prepare:offline-store": "node scripts/prepare-harness-offline-store.mjs",
     "prepare:toolchain": "node scripts/prepare-managed-toolchain.mjs",
     "sync:product-plugin": "node scripts/sync-product-plugin.mjs",
@@ -16,6 +18,8 @@
     "test:update-manifest": "node --test scripts/generate-updater-manifest.test.mjs",
     "test:release-version": "node --test scripts/verify-release-version.test.mjs",
     "test:bundle": "node --test scripts/bundle-harness-source.test.mjs",
+    "test:product-refresh": "node --test scripts/desktop-update-bridge.test.mjs scripts/product-plugin-compatibility.test.mjs scripts/refresh-product-plugins.test.mjs scripts/sync-product-plugin.test.mjs scripts/verify-product-release.test.mjs",
+    "test:prepare-release": "node --test scripts/prepare-release.test.mjs",
     "test:offline": "node --test scripts/prepare-harness-offline-store.test.mjs scripts/prepare-managed-toolchain.test.mjs scripts/prepare-xiaohui-runtime.test.mjs",
     "test:overlay": "node --test overlay/desktop-notify/index.test.mjs",
     "verify:release-version": "node scripts/verify-release-version.mjs",
@@ -25,6 +29,9 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.6",
-    "cross-env": "^7.0.3"
+    "cross-env": "^7.0.3",
+    "playwright": "^1.49.0",
+    "semver": "^7.8.5",
+    "smol-toml": "^1.7.1"
   }
 }

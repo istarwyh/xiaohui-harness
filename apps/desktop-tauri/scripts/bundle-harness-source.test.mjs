@@ -3,13 +3,20 @@ import test from 'node:test'
 
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   buildTrimmedWorkspaceYaml,
-  hashPublishedSnapshot,
+  hashExternalSnapshot,
   installProductPlugins,
 } from './bundle-harness-source.mjs'
+
+const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+function productVersion(directory) {
+  return JSON.parse(readFileSync(join(desktopRoot, 'product', directory, 'package.json'), 'utf8')).version
+}
 
 test('buildTrimmedWorkspaceYaml keeps upstream patch and build declarations verbatim', () => {
   const source = `packages:
@@ -66,15 +73,15 @@ test('buildTrimmedWorkspaceYaml rejects a workspace without a packages block', (
   assert.throws(() => buildTrimmedWorkspaceYaml('linkWorkspacePackages: true\n'), /packages/)
 })
 
-test('hashPublishedSnapshot ignores only the XiaoHui provenance sidecar', () => {
-  const root = mkdtempSync(join(tmpdir(), 'xiaohui-published-plugin-'))
+test('hashExternalSnapshot ignores only the XiaoHui provenance sidecar', () => {
+  const root = mkdtempSync(join(tmpdir(), 'xiaohui-external-plugin-'))
   try {
     writeFileSync(join(root, 'package.json'), '{"name":"example"}\n')
-    const before = hashPublishedSnapshot(root)
+    const before = hashExternalSnapshot(root)
     writeFileSync(join(root, 'XIAOHUI_UPSTREAM.json'), '{"treeSha256":"recorded"}\n')
-    assert.equal(hashPublishedSnapshot(root), before)
+    assert.equal(hashExternalSnapshot(root), before)
     writeFileSync(join(root, 'package.json'), '{"name":"changed"}\n')
-    assert.notEqual(hashPublishedSnapshot(root), before)
+    assert.notEqual(hashExternalSnapshot(root), before)
   }
   finally {
     rmSync(root, { recursive: true, force: true })
@@ -97,6 +104,7 @@ test('installProductPlugins makes every XiaoHui plugin an in-box CLI dependency'
     assert.equal(manifest.dependencies['dsh-harbor-evolution'], 'workspace:*')
     assert.equal(manifest.dependencies['dsh-codex-auth'], 'workspace:*')
     assert.equal(manifest.dependencies['dsh-better-sidebar'], 'workspace:*')
+    assert.equal(manifest.dependencies['dsh-context-doctor'], 'workspace:*')
     assert.equal(manifest.dependencies['dsh-personal-workbench'], 'workspace:*')
     assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent'], 'workspace:*')
     assert.ok(readFileSync(join(root, 'packages', 'product', 'harbor-evolution', 'skills', 'evolve-agent-with-harbor', 'SKILL.md'), 'utf8').length > 0)
@@ -104,20 +112,22 @@ test('installProductPlugins makes every XiaoHui plugin an in-box CLI dependency'
       JSON.parse(readFileSync(join(root, 'packages', 'product', 'harbor-evolution', 'schemas', 'meta-evaluation-report.schema.json'), 'utf8')).title,
       'Evaluator Meta-Evaluation Report v1',
     )
-    assert.equal(
-      JSON.parse(readFileSync(join(root, 'packages', 'product', 'dsh-codex-auth', 'package.json'), 'utf8')).version,
-      '0.3.0',
-    )
-    assert.equal(
-      JSON.parse(readFileSync(join(root, 'packages', 'product', 'dsh-better-sidebar', 'package.json'), 'utf8')).version,
-      '0.15.1',
-    )
-    assert.equal(
-      JSON.parse(readFileSync(join(root, 'packages', 'product', 'personal-workbench', 'package.json'), 'utf8')).version,
-      '0.1.0',
-    )
+    for (const [source, destination] of [
+      ['harbor-evolution', 'harbor-evolution'],
+      ['dsh-codex-auth', 'dsh-codex-auth'],
+      ['dsh-better-sidebar', 'dsh-better-sidebar'],
+      ['context-doctor', 'context-doctor'],
+      ['personal-workbench', 'personal-workbench'],
+    ]) {
+      assert.equal(
+        JSON.parse(readFileSync(join(root, 'packages', 'product', destination, 'package.json'), 'utf8')).version,
+        productVersion(source),
+      )
+    }
     assert.ok(readFileSync(join(root, 'packages', 'product', 'dsh-codex-auth', 'lib', 'client.js'), 'utf8').length > 0)
     assert.ok(readFileSync(join(root, 'packages', 'product', 'dsh-better-sidebar', 'lib', 'client.js'), 'utf8').length > 0)
+    assert.ok(readFileSync(join(root, 'packages', 'product', 'context-doctor', 'lib', 'client.js'), 'utf8').length > 0)
+    assert.ok(readFileSync(join(root, 'packages', 'product', 'context-doctor', 'lib', 'index.js'), 'utf8').length > 0)
     assert.ok(readFileSync(join(root, 'packages', 'product', 'personal-workbench', 'lib', 'client.js'), 'utf8').length > 0)
   }
   finally {

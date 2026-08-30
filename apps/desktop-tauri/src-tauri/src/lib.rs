@@ -42,7 +42,8 @@ pub fn run() {
         }))
         .invoke_handler(tauri::generate_handler![
             chrome::set_close_action,
-            chrome::restart_app
+            chrome::restart_app,
+            updater::check_for_updates
         ])
         .setup(|app| {
             let handle = app.handle().clone();

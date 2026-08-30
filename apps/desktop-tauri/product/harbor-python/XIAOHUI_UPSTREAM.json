@@ -1,0 +1,18 @@
+{
+  "version": "0.7.3",
+  "sourceKind": "github-release-pair",
+  "channel": "latest-stable-release",
+  "source": "https://codeload.github.com/istarwyh/harbor-self-evolving/tar.gz/f0552ce79107fc0e7b48bffabd1d7e7acfe38874",
+  "releaseTag": "v0.7.3",
+  "commit": "f0552ce79107fc0e7b48bffabd1d7e7acfe38874",
+  "integrity": "sha512-QkM9OqgLJFeyswRIFIAlfD28wosXKsbCvwgrg6bh+Ce+KAoNd4ts7d7+PUVYh/NsPXavqqunNxTNDy/uO5PqYg==",
+  "archiveSha256": "33fb6f0d9e8d78fc5de301abe68d3265bd3bd0419244d28ce78bdff16d875420",
+  "repository": "https://github.com/istarwyh/harbor-self-evolving",
+  "package": "harbor-dsh-evolution",
+  "sourcePath": "packages/harbor-plugin",
+  "patches": [
+    "Preserve the XiaoHui bilingual README projection."
+  ],
+  "license": "MIT",
+  "treeSha256": "0bdfb4e9e27aaf1b2e4c06442c20d7a1add40b0fc617cd7ef42bed17d5819f86"
+}

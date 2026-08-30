@@ -262,6 +262,128 @@ function BrandSettingsRow({ scope, t }) {
   ] });
 }
 
+// src/client/ApplicationUpdateRow.tsx
+var import_react2 = require("react");
+
+// src/client/desktop-update.ts
+var DESKTOP_UPDATE_CHANNEL = "xiaohui.desktop.update";
+var DESKTOP_UPDATE_VERSION = 1;
+var REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+var DEFAULT_HANDSHAKE_TIMEOUT_MS = 5e3;
+function createRequestId() {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function isDesktopUpdateAvailable(target = typeof window === "undefined" ? void 0 : window) {
+  return target !== void 0 && target.parent !== target;
+}
+function readDesktopUpdateResponse(value, requestId) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return void 0;
+  const response = value;
+  if (response.channel !== DESKTOP_UPDATE_CHANNEL || response.version !== DESKTOP_UPDATE_VERSION || response.requestId !== requestId) return void 0;
+  if (response.type === "check-accepted") {
+    return Object.keys(response).sort().join(",") === "channel,requestId,type,version" ? response : void 0;
+  }
+  if (response.type !== "check-response" || typeof response.ok !== "boolean") return void 0;
+  const expectedKeys = response.ok ? "channel,message,ok,requestId,type,version" : "channel,error,ok,requestId,type,version";
+  if (Object.keys(response).sort().join(",") !== expectedKeys) return void 0;
+  if (response.ok) {
+    if (typeof response.message !== "string" || response.message.length > 2048) return void 0;
+  } else if (typeof response.error !== "string" || response.error.length > 2048) {
+    return void 0;
+  }
+  return response;
+}
+function requestDesktopUpdate(options = {}) {
+  const target = options.target ?? window;
+  if (!isDesktopUpdateAvailable(target)) {
+    return Promise.reject(new Error("desktop-shell-unavailable"));
+  }
+  const requestId = options.requestId ?? createRequestId();
+  if (!REQUEST_ID_PATTERN.test(requestId)) {
+    return Promise.reject(new Error("desktop-update-request-id-invalid"));
+  }
+  return new Promise((resolve, reject) => {
+    const parent = target.parent;
+    let handshakeTimeout;
+    const onMessage = (event) => {
+      if (event.source !== parent) return;
+      const response = readDesktopUpdateResponse(event.data, requestId);
+      if (response === void 0) return;
+      if (response.type === "check-accepted") {
+        if (handshakeTimeout !== void 0) target.clearTimeout(handshakeTimeout);
+        handshakeTimeout = void 0;
+        return;
+      }
+      cleanup();
+      if (response.ok) resolve(response.message ?? "");
+      else reject(new Error(response.error ?? "desktop-update-failed"));
+    };
+    handshakeTimeout = target.setTimeout(() => {
+      cleanup();
+      reject(new Error("desktop-update-shell-unavailable"));
+    }, options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS);
+    const cleanup = () => {
+      if (handshakeTimeout !== void 0) target.clearTimeout(handshakeTimeout);
+      handshakeTimeout = void 0;
+      target.removeEventListener("message", onMessage);
+    };
+    target.addEventListener("message", onMessage);
+    parent.postMessage({
+      channel: DESKTOP_UPDATE_CHANNEL,
+      version: DESKTOP_UPDATE_VERSION,
+      type: "check-request",
+      requestId
+    }, "*");
+  });
+}
+
+// src/client/ApplicationUpdateRow.tsx
+var import_jsx_runtime3 = require("react/jsx-runtime");
+function ApplicationUpdateRow({ t }) {
+  const [available] = (0, import_react2.useState)(() => isDesktopUpdateAvailable());
+  const [status, setStatus] = (0, import_react2.useState)("idle");
+  const [detail, setDetail] = (0, import_react2.useState)("");
+  const check = async () => {
+    setStatus("checking");
+    setDetail("");
+    try {
+      setDetail(await requestDesktopUpdate());
+      setStatus("result");
+    } catch (error) {
+      setDetail(error instanceof Error ? error.message : String(error));
+      setStatus("error");
+    }
+  };
+  const busy = status === "checking";
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("section", { className: "dpw-card", "aria-labelledby": "dpw-update-title", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dpw-heading", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { id: "dpw-update-title", className: "dpw-title", children: t("update.title") }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-description", children: t("update.description") })
+    ] }),
+    !available && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status", children: t("update.desktop-only") }),
+    busy && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status", role: "status", children: t("update.checking") }),
+    status === "result" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-status dpw-success", role: "status", children: detail }),
+    status === "error" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dpw-error", role: "alert", children: [
+      t(detail === "desktop-update-shell-unavailable" ? "update.shell-unavailable" : "update.error"),
+      detail === "desktop-update-shell-unavailable" ? "" : ` ${detail}`
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dpw-actions", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      "button",
+      {
+        type: "button",
+        className: "dpw-button dpw-button-primary",
+        disabled: !available || busy,
+        onClick: () => {
+          void check();
+        },
+        children: t(busy ? "update.checking-action" : "update.action")
+      }
+    ) })
+  ] });
+}
+
 // src/client/locales.ts
 var zh = {
   "title": "\u6211\u7684\u5DE5\u4F5C\u53F0",
@@ -281,7 +403,15 @@ var zh = {
   "status.readonly": "\u5F53\u524D Profile \u7684\u8BBE\u7F6E\u6587\u4EF6\u4E0D\u53EF\u5199\u3002",
   "error.name": "\u8BF7\u8F93\u5165\u5DE5\u4F5C\u53F0\u540D\u79F0\u3002",
   "error.read": "\u56FE\u7247\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002",
-  "error.save": "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u6587\u4EF6\u540E\u91CD\u8BD5\u3002"
+  "error.save": "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u6587\u4EF6\u540E\u91CD\u8BD5\u3002",
+  "update.title": "\u5E94\u7528\u66F4\u65B0",
+  "update.description": "\u68C0\u67E5\u3001\u4E0B\u8F7D\u5E76\u5B89\u88C5\u7B7E\u540D\u7684 XiaoHui Harness \u6700\u65B0\u7248\u672C\u3002\u4EA7\u54C1\u63D2\u4EF6\u4F1A\u968F\u5E94\u7528\u4E00\u8D77\u66F4\u65B0\uFF0C\u5B89\u88C5\u5B8C\u6210\u540E\u5E94\u7528\u5C06\u81EA\u52A8\u91CD\u542F\u3002",
+  "update.desktop-only": "\u8BF7\u5728 XiaoHui Harness \u684C\u9762\u5E94\u7528\u4E2D\u4F7F\u7528\u6B64\u529F\u80FD\u3002",
+  "update.action": "\u68C0\u67E5\u5E76\u66F4\u65B0",
+  "update.checking-action": "\u6B63\u5728\u68C0\u67E5\u2026",
+  "update.checking": "\u6B63\u5728\u68C0\u67E5\u66F4\u65B0\uFF1B\u5982\u6709\u65B0\u7248\u672C\uFF0C\u5C06\u81EA\u52A8\u4E0B\u8F7D\u5E76\u5B89\u88C5\u3002",
+  "update.shell-unavailable": "\u684C\u9762\u66F4\u65B0\u670D\u52A1\u672A\u54CD\u5E94\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00 XiaoHui Harness \u540E\u91CD\u8BD5\u3002",
+  "update.error": "\u68C0\u67E5\u66F4\u65B0\u5931\u8D25\uFF1A"
 };
 var en = {
   "title": "My Workbench",
@@ -301,7 +431,15 @@ var en = {
   "status.readonly": "This Profile settings document is read-only.",
   "error.name": "Enter a workbench name.",
   "error.read": "The image could not be read. Try again.",
-  "error.save": "Could not save. Check the settings document and try again."
+  "error.save": "Could not save. Check the settings document and try again.",
+  "update.title": "Application updates",
+  "update.description": "Check, download, and install the latest signed XiaoHui Harness release. Product plugins update with the app, which restarts after installation.",
+  "update.desktop-only": "Use this action in the XiaoHui Harness desktop application.",
+  "update.action": "Check and update",
+  "update.checking-action": "Checking\u2026",
+  "update.checking": "Checking for updates. A new release will download and install automatically.",
+  "update.shell-unavailable": "The desktop update service did not respond. Reopen XiaoHui Harness and try again.",
+  "update.error": "Update check failed:"
 };
 
 // src/client/styles.ts
@@ -414,6 +552,12 @@ function apply(ctx) {
     locale: SETTINGS_LOCALE_NAMESPACE,
     inject: () => ({ scope })
   }, BrandSettingsRow));
+  ctx.slots.inject("settings.general.item", () => ctx.slots.register({
+    name: "settings.general.item",
+    id: "application-update",
+    order: 30,
+    locale: SETTINGS_LOCALE_NAMESPACE
+  }, ApplicationUpdateRow));
 }
     return module.exports;
   },
