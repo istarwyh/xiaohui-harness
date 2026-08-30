@@ -1,6 +1,7 @@
 //! Build `wsl.exe` argv for `dsh web` without executing Windows `node.exe`.
 
 use crate::i18n::{self, Msg};
+use crate::network_proxy::{env_arguments, ResolvedNetworkProxy};
 
 fn err_windows_node() -> &'static str {
     i18n::t(Msg::WslNoWindowsNode)
@@ -36,7 +37,10 @@ pub struct WslCommand {
 }
 
 /// Build `wsl.exe` argv for `dsh web` inside the selected distro.
-pub fn build_wsl_web_command(spec: &WslLaunchSpec) -> Result<WslCommand, String> {
+pub fn build_wsl_web_command(
+    spec: &WslLaunchSpec,
+    network_proxy: &ResolvedNetworkProxy,
+) -> Result<WslCommand, String> {
     reject_windows_node(&spec.linux_node)?;
 
     let mut args = vec![
@@ -46,10 +50,13 @@ pub fn build_wsl_web_command(spec: &WslLaunchSpec) -> Result<WslCommand, String>
         spec.linux_harness_root.clone(),
         "--exec".into(),
         "/usr/bin/env".into(),
+    ];
+    args.extend(env_arguments(network_proxy));
+    args.extend([
         format!("PATH={}", spec.linux_path),
         format!("DSH_HOME={}", spec.linux_dsh_home),
         "NODE_ENV=production".into(),
-    ];
+    ]);
 
     if let Some(url) = &spec.notify_url {
         args.push(format!("DSH_DESKTOP_NOTIFY_URL={url}"));
@@ -84,6 +91,7 @@ pub fn build_wsl_web_command(spec: &WslLaunchSpec) -> Result<WslCommand, String>
 #[cfg(test)]
 mod tests {
     use super::{build_wsl_web_command, WslLaunchSpec};
+    use crate::network_proxy::{resolve, NetworkProxySettings};
 
     fn spec() -> WslLaunchSpec {
         WslLaunchSpec {
@@ -104,7 +112,8 @@ mod tests {
     #[test]
     fn wsl_desktop_host_orders_launcher_patches_before_web_arguments() {
         let s = spec();
-        let cmd = build_wsl_web_command(&s).unwrap();
+        let proxy = resolve(&NetworkProxySettings::default()).unwrap();
+        let cmd = build_wsl_web_command(&s, &proxy).unwrap();
         assert_eq!(cmd.program, "wsl.exe");
         let expected: Vec<String> = vec![
             "-d".to_string(),
@@ -113,6 +122,24 @@ mod tests {
             "/home/u/.local/share/dsh-desktop/harness-versions/abc".to_string(),
             "--exec".to_string(),
             "/usr/bin/env".to_string(),
+            "-u".to_string(),
+            "HTTP_PROXY".to_string(),
+            "-u".to_string(),
+            "HTTPS_PROXY".to_string(),
+            "-u".to_string(),
+            "ALL_PROXY".to_string(),
+            "-u".to_string(),
+            "NO_PROXY".to_string(),
+            "-u".to_string(),
+            "http_proxy".to_string(),
+            "-u".to_string(),
+            "https_proxy".to_string(),
+            "-u".to_string(),
+            "all_proxy".to_string(),
+            "-u".to_string(),
+            "no_proxy".to_string(),
+            "-u".to_string(),
+            "NODE_USE_ENV_PROXY".to_string(),
             "PATH=/home/u/.local/share/dsh-desktop/runtime/node/bin:/usr/bin".to_string(),
             "DSH_HOME=/home/u/.dsh".to_string(),
             "NODE_ENV=production".to_string(),
@@ -141,7 +168,8 @@ mod tests {
     fn rejects_linux_node_with_backslash() {
         let mut s = spec();
         s.linux_node = "/home/u\\runtime/node/bin/node".into();
-        let err = build_wsl_web_command(&s).unwrap_err();
+        let proxy = resolve(&NetworkProxySettings::default()).unwrap();
+        let err = build_wsl_web_command(&s, &proxy).unwrap_err();
         assert_eq!(err, "禁止在 WSL 中执行 Windows node.exe");
     }
 
@@ -149,7 +177,8 @@ mod tests {
     fn rejects_lowercase_node_exe_suffix() {
         let mut s = spec();
         s.linux_node = "/mnt/c/Program Files/nodejs/node.exe".into();
-        let err = build_wsl_web_command(&s).unwrap_err();
+        let proxy = resolve(&NetworkProxySettings::default()).unwrap();
+        let err = build_wsl_web_command(&s, &proxy).unwrap_err();
         assert_eq!(err, "禁止在 WSL 中执行 Windows node.exe");
     }
 
@@ -157,7 +186,8 @@ mod tests {
     fn rejects_uppercase_node_exe_suffix() {
         let mut s = spec();
         s.linux_node = "/mnt/c/Program Files/nodejs/NODE.EXE".into();
-        let err = build_wsl_web_command(&s).unwrap_err();
+        let proxy = resolve(&NetworkProxySettings::default()).unwrap();
+        let err = build_wsl_web_command(&s, &proxy).unwrap_err();
         assert_eq!(err, "禁止在 WSL 中执行 Windows node.exe");
     }
 
@@ -165,7 +195,8 @@ mod tests {
     fn rejects_windows_node_exe_path() {
         let mut s = spec();
         s.linux_node = r"C:\Program Files\nodejs\node.exe".into();
-        let err = build_wsl_web_command(&s).unwrap_err();
+        let proxy = resolve(&NetworkProxySettings::default()).unwrap();
+        let err = build_wsl_web_command(&s, &proxy).unwrap_err();
         assert_eq!(err, "禁止在 WSL 中执行 Windows node.exe");
     }
 }

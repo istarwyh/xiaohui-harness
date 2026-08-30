@@ -295,6 +295,8 @@
     const desktopLifecycleChannel = 'xiaohui.desktop.lifecycle'
     const desktopLifecycleVersion = 1
     const desktopLifecycleRequestId = /^[A-Za-z0-9_-]{1,64}$/
+    const networkProxyChannel = 'xiaohui.desktop.network-proxy'
+    const networkProxyVersion = 1
     const marketplaceLinkChannel = 'xiaohui.desktop.marketplace-link'
     const marketplaceLinkVersion = 1
     let embeddedOrigin
@@ -316,6 +318,36 @@
       if (value.type === 'check-update-request') return 'check-update'
       if (value.type === 'restart-request') return 'restart'
       return false
+    }
+
+    function isNetworkProxySettings(value) {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+      const keys = Object.keys(value).sort()
+      return keys.join(',') === 'httpProxy,httpsProxy,mode,noProxy'
+        && ['direct', 'system', 'custom'].includes(value.mode)
+        && typeof value.httpProxy === 'string'
+        && value.httpProxy.length <= 2048
+        && typeof value.httpsProxy === 'string'
+        && value.httpsProxy.length <= 2048
+        && typeof value.noProxy === 'string'
+        && value.noProxy.length <= 4096
+    }
+
+    function readNetworkProxyAction(value) {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+      if (value.channel !== networkProxyChannel
+        || value.version !== networkProxyVersion
+        || typeof value.requestId !== 'string'
+        || !desktopLifecycleRequestId.test(value.requestId)) return false
+      if (value.type === 'get-request') {
+        return Object.keys(value).sort().join(',') === 'channel,requestId,type,version'
+          ? 'get'
+          : false
+      }
+      if (value.type !== 'test-request' && value.type !== 'save-request') return false
+      if (Object.keys(value).sort().join(',') !== 'channel,requestId,settings,type,version'
+        || !isNetworkProxySettings(value.settings)) return false
+      return value.type === 'test-request' ? 'test' : 'save'
     }
 
     function isMarketplaceExternalUrl(value) {
@@ -373,6 +405,37 @@
           response.ok = true
         }
         catch (error) {
+          response.ok = false
+          response.error = String(error instanceof Error ? error.message : error).slice(0, 2048)
+        }
+        embeddedWindow.postMessage(response, embeddedOrigin)
+        return
+      }
+      const networkProxyAction = readNetworkProxyAction(event.data)
+      if (networkProxyAction !== false) {
+        const response = {
+          channel: networkProxyChannel,
+          version: networkProxyVersion,
+          requestId: event.data.requestId,
+        }
+        embeddedWindow.postMessage({ ...response, type: `${networkProxyAction}-accepted` }, embeddedOrigin)
+        try {
+          const invoke = window.__TAURI__?.core?.invoke
+          if (typeof invoke !== 'function') throw new Error('Desktop network proxy bridge is unavailable')
+          if (networkProxyAction === 'get') {
+            response.value = await invoke('get_network_proxy_settings')
+          }
+          else if (networkProxyAction === 'test') {
+            response.value = await invoke('test_network_proxy_settings', { settings: event.data.settings })
+          }
+          else {
+            response.value = await invoke('save_network_proxy_settings', { settings: event.data.settings })
+          }
+          response.type = `${networkProxyAction}-response`
+          response.ok = true
+        }
+        catch (error) {
+          response.type = `${networkProxyAction}-response`
           response.ok = false
           response.error = String(error instanceof Error ? error.message : error).slice(0, 2048)
         }

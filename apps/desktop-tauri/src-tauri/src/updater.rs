@@ -3,13 +3,16 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::chrome;
+use crate::desktop_settings;
 use crate::i18n::{self, Msg};
+use crate::network_proxy;
 use crate::notify;
 use crate::runtime::boot_log;
+use crate::runtime::DesktopRuntime;
 
 const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 static UPDATE_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -99,9 +102,14 @@ async fn check_and_install(app: &AppHandle) -> Result<UpdateOutcome, String> {
         return Ok(UpdateOutcome::Busy);
     };
 
+    let proxy = app
+        .try_state::<DesktopRuntime>()
+        .map(|runtime| runtime.network_proxy.clone())
+        .map(Ok)
+        .unwrap_or_else(|| network_proxy::resolve(&desktop_settings::load().network_proxy))?;
+
     boot_log::info(&format!("desktop update check current={current}"));
-    let Some(update) = app
-        .updater_builder()
+    let Some(update) = network_proxy::apply_to_updater(app.updater_builder(), &proxy)
         .timeout(UPDATE_CHECK_TIMEOUT)
         .build()
         .map_err(|error| error.to_string())?

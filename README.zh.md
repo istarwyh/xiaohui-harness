@@ -20,13 +20,13 @@ XiaoHui Harness 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deep
 | 评测运行时 | 便携式 CPython 3.12、已提交的 Harbor Python Adapter 快照与 Harbor |
 | 产品数据 | 独立的 `DSH_HOME` 和默认 XiaoHui 工作区 |
 
-首次启动不会访问 npm 或 Node 镜像：XiaoHui 会校验并展开安装包内的 Node/pnpm 与依赖 Store 归档，再执行冻结的离线安装。运行 Harbor Job 仍然需要本机安装并启动 Docker。Codex Auth 需要官方 `codex` CLI 及其本地 ChatGPT 登录态；插件只在 Host 侧读取 CLI 管理的登录状态，不会把 Token 复制进浏览器设置。Context Doctor 提供只读的上下文注入审计面板和 `context_audit` 工具。Plugin Marketplace 位于设置页，并把 GitHub Topic 结果视为发现信息：只有声明 `dsh.bundle.patch` 的 npm Package 能通过 Repository 字段或与 GitHub Owner 同 Scope 的 DSH 上游元数据关联该仓库时才启用一键安装，Package 对应的 pnpm 失败会持续显示，仓库与 npm 链接则通过受限桌面桥在系统浏览器中打开。安装插件后，可通过**设置 → 通用设置 → 应用生命周期 → 重启 XiaoHui**停止私有 Host 并重启应用，使新 Package 进入扫描。Harbor 会在 Job 启动前冻结 Agent 当前选择的模型，并让隔离的 Candidate 通过 Job 级 Broker 调用同一个 Host 模型，因此默认的 GPT Auth 路径不需要额外的 DeepSeek 凭据。Candidate 只会得到短期有效的 Broker Capability，不会得到可复用的 Codex OAuth Token。显式选择 DeepSeek 模型时仍可在工作台内配置 DeepSeek API 凭据，这些凭据不会提交到本仓库。Peer Metadata 覆盖必须在策略中经过评审且精确到版本；外部快照的每一项功能兼容补丁都必须写入来源记录，并由发布 Smoke 固定。
+首次启动不会访问 npm 或 Node 镜像：XiaoHui 会校验并展开安装包内的 Node/pnpm 与依赖 Store 归档，再执行冻结的离线安装。运行 Harbor Job 仍然需要本机安装并启动 Docker。Codex Auth 需要官方 `codex` CLI 及其本地 ChatGPT 登录态；插件只在 Host 侧读取 CLI 管理的登录状态，不会把 Token 复制进浏览器设置。**设置 → 通用设置 → 网络代理**会把同一套直连、固定 macOS 系统代理或自定义代理策略应用到 Host、插件子进程、安装流程与应用更新器；当前草稿可以通过 ChatGPT 测试，并在用户确认重启后生效。Context Doctor 提供只读的上下文注入审计面板和 `context_audit` 工具。Plugin Marketplace 位于设置页，并把 GitHub Topic 结果视为发现信息：只有声明 `dsh.bundle.patch` 的 npm Package 能通过 Repository 字段或与 GitHub Owner 同 Scope 的 DSH 上游元数据关联该仓库时才启用一键安装，Package 对应的 pnpm 失败会持续显示，仓库与 npm 链接则通过受限桌面桥在系统浏览器中打开。安装插件后，可通过**设置 → 通用设置 → 应用生命周期 → 重启 XiaoHui**停止私有 Host 并重启应用，使新 Package 进入扫描。Harbor 会在 Job 启动前冻结 Agent 当前选择的模型，并让隔离的 Candidate 通过 Job 级 Broker 调用同一个 Host 模型，因此默认的 GPT Auth 路径不需要额外的 DeepSeek 凭据。Candidate 只会得到短期有效的 Broker Capability，不会得到可复用的 Codex OAuth Token。显式选择 DeepSeek 模型时仍可在工作台内配置 DeepSeek API 凭据，这些凭据不会提交到本仓库。Peer Metadata 覆盖必须在策略中经过评审且精确到版本；外部快照的每一项功能兼容补丁都必须写入来源记录，并由发布 Smoke 固定。
 
 <a id="run"></a>
 
 ## 运行
 
-从 [GitHub Releases](https://github.com/istarwyh/xiaohui-harness/releases) 安装 DMG 并打开 XiaoHui Harness。**设置 → 通用设置 → 应用生命周期**提供运行带签名应用更新器的**检查并更新**操作，以及用于加载新安装插件的**重启 XiaoHui**操作。内置产品插件会随带签名的 XiaoHui Release 一起升级。已经完成构建的源码 Checkout 仍可通过 `pnpm dsh web` 启动上游 Web UI。
+从 [GitHub Releases](https://github.com/istarwyh/xiaohui-harness/releases) 安装 DMG 并打开 XiaoHui Harness。**设置 → 通用设置 → 网络代理**用于配置和测试应用全局链路；保存后会重启 XiaoHui，让全部应用自有进程采用同一策略。**设置 → 通用设置 → 应用生命周期**提供运行带签名应用更新器的**检查并更新**操作，以及用于加载新安装插件的**重启 XiaoHui**操作。内置产品插件会随带签名的 XiaoHui Release 一起升级。已经完成构建的源码 Checkout 仍可通过 `pnpm dsh web` 启动上游 Web UI。
 
 <a id="run-from-source"></a>
 

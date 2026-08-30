@@ -3,6 +3,7 @@ mod cli_shim;
 mod desktop_settings;
 mod external_links;
 mod i18n;
+mod network_proxy;
 mod notify;
 mod overlay;
 mod product;
@@ -45,6 +46,9 @@ pub fn run() {
             chrome::set_close_action,
             chrome::restart_app,
             external_links::open_marketplace_url,
+            network_proxy::get_network_proxy_settings,
+            network_proxy::save_network_proxy_settings,
+            network_proxy::test_network_proxy_settings,
             updater::check_for_updates
         ])
         .setup(|app| {
@@ -137,10 +141,18 @@ async fn boot_app(app: AppHandle, bundled: Option<PathBuf>) -> Result<(), String
     };
 
     let settings = desktop_settings::load();
+    let network_proxy = network_proxy::resolve(&settings.network_proxy)?;
+    network_proxy::log_active(&network_proxy);
     let runtime = match boot_kind(&settings) {
         AgentEnvironment::Windows => {
-            boot_windows_runtime(app.clone(), bundled, notify.as_ref(), Arc::clone(&progress))
-                .await?
+            boot_windows_runtime(
+                app.clone(),
+                bundled,
+                notify.as_ref(),
+                Arc::clone(&progress),
+                network_proxy,
+            )
+            .await?
         }
         AgentEnvironment::Wsl => {
             boot_wsl_runtime(
@@ -149,6 +161,7 @@ async fn boot_app(app: AppHandle, bundled: Option<PathBuf>) -> Result<(), String
                 &settings,
                 notify.as_ref(),
                 Arc::clone(&progress),
+                network_proxy,
             )
             .await?
         }
@@ -188,8 +201,9 @@ async fn boot_windows_runtime(
     bundled: Option<PathBuf>,
     notify: Option<&notify::NotifyHandle>,
     progress: Arc<dyn Fn(ProvisionEvent) + Send + Sync>,
+    network_proxy: network_proxy::ResolvedNetworkProxy,
 ) -> Result<DesktopRuntime, String> {
-    let paths = match ensure_runtime(bundled.clone(), {
+    let paths = match ensure_runtime(bundled.clone(), network_proxy.clone(), {
         let progress = Arc::clone(&progress);
         move |event| progress(event)
     })
@@ -232,7 +246,7 @@ async fn boot_windows_runtime(
         notify_url: notify_url.to_string(),
     });
 
-    DesktopRuntime::start(paths, host_overlay.as_ref(), progress).await
+    DesktopRuntime::start(paths, host_overlay.as_ref(), progress, network_proxy).await
 }
 
 async fn boot_wsl_runtime(
@@ -241,6 +255,7 @@ async fn boot_wsl_runtime(
     settings: &desktop_settings::DesktopSettings,
     notify: Option<&notify::NotifyHandle>,
     progress: Arc<dyn Fn(ProvisionEvent) + Send + Sync>,
+    network_proxy: network_proxy::ResolvedNetworkProxy,
 ) -> Result<DesktopRuntime, String> {
     progress(ProvisionEvent::Status(i18n::t(Msg::StatusDetectWsl).into()));
     let runner = SystemWslRunner;
@@ -268,6 +283,7 @@ async fn boot_wsl_runtime(
         &windows_dsh_home,
         overlay_for_provision,
         notify_url,
+        network_proxy.clone(),
         {
             let progress = Arc::clone(&progress);
             move |event| progress(event)
@@ -283,8 +299,9 @@ async fn boot_wsl_runtime(
     });
 
     progress(ProvisionEvent::Status(i18n::t(Msg::StatusStartWeb).into()));
-    let host = spawn_wsl_web_host(&wsl_paths, host_overlay.as_ref(), &runner).await?;
-    Ok(DesktopRuntime::start_wsl(host, wsl_paths))
+    let host =
+        spawn_wsl_web_host(&wsl_paths, host_overlay.as_ref(), &runner, &network_proxy).await?;
+    Ok(DesktopRuntime::start_wsl(host, wsl_paths, network_proxy))
 }
 
 fn splash_eval(app: &AppHandle, script: &str) -> Result<(), String> {

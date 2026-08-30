@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use crate::desktop_settings::{effective_agent_environment, AgentEnvironment, DesktopSettings};
 use crate::i18n::{self, Msg};
+use crate::network_proxy::ResolvedNetworkProxy;
 use plugin_catalog::PluginRunTarget;
 use provision::RuntimePaths;
 use supervisor::{HostHandle, HostOverlay};
@@ -29,6 +30,8 @@ pub struct DesktopRuntime {
     pub web_url: String,
     /// How tray `dsh plugin add` must reach the live Host profile.
     pub plugin_target: PluginRunTarget,
+    /// Process-wide outbound proxy policy fixed at application startup.
+    pub network_proxy: ResolvedNetworkProxy,
 }
 
 impl DesktopRuntime {
@@ -40,6 +43,7 @@ impl DesktopRuntime {
         paths: RuntimePaths,
         overlay: Option<&HostOverlay>,
         progress: Arc<dyn Fn(ProvisionEvent) + Send + Sync>,
+        network_proxy: ResolvedNetworkProxy,
     ) -> Result<Self, String> {
         boot_log::info(&format!(
             "provision complete cli={} node={}",
@@ -57,12 +61,13 @@ impl DesktopRuntime {
             i18n::t(Msg::StatusCheckProfile).into(),
         ));
         if let Err(error) =
-            profile_repair::ensure_profile_installs(&paths, &host_path, &progress).await
+            profile_repair::ensure_profile_installs(&paths, &host_path, &progress, &network_proxy)
+                .await
         {
             return Err(error);
         }
         progress(ProvisionEvent::Status(i18n::t(Msg::StatusStartWeb).into()));
-        let host = supervisor::spawn_web_host(&paths, overlay, &host_path).await?;
+        let host = supervisor::spawn_web_host(&paths, overlay, &host_path, &network_proxy).await?;
         boot_log::info(&format!("dsh web ready url={}", host.web_url));
         Ok(Self {
             paths: paths.clone(),
@@ -74,6 +79,7 @@ impl DesktopRuntime {
                 dsh_home: paths.dsh_home.clone(),
                 host_path,
             },
+            network_proxy,
             host,
         })
     }
@@ -88,7 +94,11 @@ impl DesktopRuntime {
     /// Skips the Windows PATH bridge and Windows profile repair. `paths` is a
     /// documented placeholder: the live Linux tree lives on WSL runtime paths
     /// inside the supervisor session, not on Windows `RuntimePaths`.
-    pub fn start_wsl(host: HostHandle, wsl_paths: WslRuntimePaths) -> Self {
+    pub fn start_wsl(
+        host: HostHandle,
+        wsl_paths: WslRuntimePaths,
+        network_proxy: ResolvedNetworkProxy,
+    ) -> Self {
         boot_log::info(&format!("wsl dsh web ready url={}", host.web_url));
         Self {
             // Placeholder only — WSL Host does not consume Windows RuntimePaths.
@@ -102,6 +112,7 @@ impl DesktopRuntime {
             },
             web_url: host.web_url.clone(),
             plugin_target: PluginRunTarget::Wsl(wsl_paths),
+            network_proxy,
             host,
         }
     }

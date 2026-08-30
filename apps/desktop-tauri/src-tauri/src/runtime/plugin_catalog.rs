@@ -17,6 +17,7 @@ use super::wsl::{reject_windows_node, WslCommand, WslRuntimePaths};
 use super::DesktopRuntime;
 use crate::chrome;
 use crate::i18n::{self, Msg};
+use crate::network_proxy::{apply_to_command, env_arguments, ResolvedNetworkProxy};
 use crate::notify;
 
 /// pnpm git spec for https://github.com/Sakana-yuyu/dsh-plugins.
@@ -57,10 +58,12 @@ pub fn begin_from_tray(app: &AppHandle) {
         return;
     };
     let target = runtime.plugin_target.clone();
+    let network_proxy = runtime.network_proxy.clone();
     notify::toast(app, "XiaoHui Harness", i18n::t(Msg::CatalogInstalling));
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let result = tokio::task::spawn_blocking(move || install_catalog(&target)).await;
+        let result =
+            tokio::task::spawn_blocking(move || install_catalog(&target, &network_proxy)).await;
         match result {
             Ok(Ok(())) => {
                 notify::toast(&app, "XiaoHui Harness", i18n::t(Msg::CatalogRestarting));
@@ -85,7 +88,10 @@ pub fn plugin_add_argv() -> [&'static str; 5] {
     ["plugin", "--profile", HOST_PROFILE, "add", CATALOG_SPEC]
 }
 
-fn install_catalog(target: &PluginRunTarget) -> Result<(), String> {
+fn install_catalog(
+    target: &PluginRunTarget,
+    network_proxy: &ResolvedNetworkProxy,
+) -> Result<(), String> {
     let mut cmd = match target {
         PluginRunTarget::Windows {
             node,
@@ -103,7 +109,7 @@ fn install_catalog(target: &PluginRunTarget) -> Result<(), String> {
             cmd
         }
         PluginRunTarget::Wsl(paths) => {
-            let wsl = wsl_plugin_add_command(paths)?;
+            let wsl = wsl_plugin_add_command(paths, network_proxy)?;
             let mut cmd = Command::new(&wsl.program);
             cmd.args(&wsl.args);
             cmd
@@ -114,11 +120,15 @@ fn install_catalog(target: &PluginRunTarget) -> Result<(), String> {
         .env_remove("CI")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    apply_to_command(&mut cmd, network_proxy);
     hide_console(&mut cmd);
     run_with_timeout(cmd)
 }
 
-fn wsl_plugin_add_command(paths: &WslRuntimePaths) -> Result<WslCommand, String> {
+fn wsl_plugin_add_command(
+    paths: &WslRuntimePaths,
+    network_proxy: &ResolvedNetworkProxy,
+) -> Result<WslCommand, String> {
     reject_windows_node(&paths.linux_node)?;
     let mut args = vec![
         "-d".into(),
@@ -127,13 +137,16 @@ fn wsl_plugin_add_command(paths: &WslRuntimePaths) -> Result<WslCommand, String>
         paths.linux_harness_root.clone(),
         "--exec".into(),
         "/usr/bin/env".into(),
+    ];
+    args.extend(env_arguments(network_proxy));
+    args.extend([
         format!("PATH={}", paths.linux_path),
         format!("DSH_HOME={}", paths.linux_dsh_home),
         "NODE_ENV=production".into(),
         format!("npm_config_registry={}", npm_registry()),
         paths.linux_node.clone(),
         paths.linux_cli.clone(),
-    ];
+    ]);
     args.extend(plugin_add_argv().into_iter().map(str::to_string));
     Ok(WslCommand {
         program: "wsl.exe".into(),
@@ -216,6 +229,7 @@ fn format_output_tail(tail: &Arc<Mutex<Vec<String>>>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{plugin_add_argv, wsl_plugin_add_command, CATALOG_SPEC};
+    use crate::network_proxy::{resolve, NetworkProxySettings};
     use crate::runtime::wsl::WslRuntimePaths;
 
     fn wsl_paths() -> WslRuntimePaths {
@@ -242,7 +256,8 @@ mod tests {
 
     #[test]
     fn wsl_argv_runs_linux_node_plugin_add() {
-        let cmd = wsl_plugin_add_command(&wsl_paths()).unwrap();
+        let proxy = resolve(&NetworkProxySettings::default()).unwrap();
+        let cmd = wsl_plugin_add_command(&wsl_paths(), &proxy).unwrap();
         assert_eq!(cmd.program, "wsl.exe");
         assert!(cmd.args.iter().any(|a| a == "--exec"));
         assert!(!cmd.args.iter().any(|a| a == "bash" || a == "-lc"));
@@ -256,7 +271,8 @@ mod tests {
     fn wsl_argv_rejects_windows_node() {
         let mut paths = wsl_paths();
         paths.linux_node = r"C:\Program Files\nodejs\node.exe".into();
-        let err = wsl_plugin_add_command(&paths).unwrap_err();
+        let proxy = resolve(&NetworkProxySettings::default()).unwrap();
+        let err = wsl_plugin_add_command(&paths, &proxy).unwrap_err();
         assert_eq!(err, "禁止在 WSL 中执行 Windows node.exe");
     }
 }

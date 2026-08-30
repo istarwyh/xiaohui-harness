@@ -20,6 +20,7 @@ import {
   BrandSettingsRow, type BrandSettingsRowInjected,
 } from './BrandSettingsRow.tsx'
 import { ApplicationLifecycleRow } from './ApplicationLifecycleRow.tsx'
+import { NetworkProxyRow } from './NetworkProxyRow.tsx'
 import { en, zh, type PersonalWorkbenchKey } from './locales.ts'
 import { installPersonalWorkbenchStyles } from './styles.ts'
 
@@ -144,12 +145,19 @@ export function apply(ctx: ClientContext): void {
   }, BrandSettingsRow))
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
-    id: 'application-lifecycle',
+    id: 'network-proxy',
     order: 30,
+    locale: SETTINGS_LOCALE_NAMESPACE,
+  }, NetworkProxyRow))
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'application-lifecycle',
+    order: 40,
     locale: SETTINGS_LOCALE_NAMESPACE,
   }, ApplicationLifecycleRow))
 }
 
 export type { ApplicationLifecycleRowProps } from './ApplicationLifecycleRow.tsx'
 export type { BrandSettingsRowProps } from './BrandSettingsRow.tsx'
+export type { NetworkProxyRowProps } from './NetworkProxyRow.tsx'
 export type PersonalBrandSettingsLocaleProps = PropsLocale<'settings.personal-workbench'>

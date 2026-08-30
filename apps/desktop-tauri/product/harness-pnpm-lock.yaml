@@ -4324,6 +4324,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      undici:
+        specifier: ^8.10.0
+        version: 8.10.0
 
   packages/product/plugin-marketplace:
     dependencies:

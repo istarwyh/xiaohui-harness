@@ -155,8 +155,10 @@ test('assembled Client boot requires every product response, mounted UI, and qui
   )
 })
 
-test('product smoke overlay mounts the Plugin Marketplace', () => {
-  const overlay = buildProductSmokeOverlay('/tmp/workspace', '/tmp/runtime')
+test('product smoke overlay mounts the Plugin Marketplace and proxy verifier', () => {
+  const overlay = buildProductSmokeOverlay('/tmp/workspace', '/tmp/runtime', '/tmp/proxy-verifier.mjs')
   assert.match(overlay, /id: xiaohui-release-plugin-marketplace/)
   assert.match(overlay, /name: dsh-plugin-marketplace/)
+  assert.match(overlay, /id: xiaohui-release-proxy-verifier/)
+  assert.match(overlay, /name: "\/tmp\/proxy-verifier\.mjs"/)
 })

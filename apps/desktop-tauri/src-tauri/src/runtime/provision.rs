@@ -23,6 +23,7 @@ use super::io_fallback::{is_recoverable_io, recoverable_message};
 use super::process::hide_console;
 use super::{app_data_root, ProvisionEvent};
 use crate::i18n::{self, Msg};
+use crate::network_proxy::{apply_to_client, apply_to_command, ResolvedNetworkProxy};
 
 /// Paths to the provisioned build environment and harness tree.
 #[derive(Clone, Debug)]
@@ -63,6 +64,7 @@ pub(crate) struct NodeArchiveSpec {
 /// Ensure bundled harness + Node + pnpm deps exist; mirror-fetch only build tools.
 pub async fn ensure_runtime(
     bundled_source: Option<PathBuf>,
+    network_proxy: ResolvedNetworkProxy,
     progress: impl Fn(ProvisionEvent) + Send + Sync + 'static,
 ) -> Result<RuntimePaths, String> {
     if let Some(mode) = dev_launch_mode() {
@@ -184,7 +186,9 @@ pub async fn ensure_runtime(
             .and_then(|root| install_bundled_node(root, &node_dir, DEFAULT_NODE_VERSION));
         if let Err(bundled_error) = bundled_result {
             boot_log::info(&format!("bundled Node fallback: {bundled_error}"));
-            if let Err(error) = fetch_node(&node_dir, DEFAULT_NODE_VERSION, &progress).await {
+            if let Err(error) =
+                fetch_node(&node_dir, DEFAULT_NODE_VERSION, &progress, &network_proxy).await
+            {
                 boot_log::info(&format!("node download fallback: {error}"));
                 if preferred_node.is_file() {
                     node_binary = preferred_node;
@@ -216,6 +220,7 @@ pub async fn ensure_runtime(
             &pnpm_home,
             DEFAULT_PNPM_VERSION,
             bundled_toolchain.as_deref(),
+            &network_proxy,
         ) {
             boot_log::info(&format!("pnpm install fallback: {error}"));
             if preferred_pnpm.is_file() {
@@ -232,7 +237,9 @@ pub async fn ensure_runtime(
         i18n::t(Msg::StatusInstallDeps).into(),
     ));
     progress(ProvisionEvent::Progress(50));
-    if let Err(error) = pnpm_install_harness(&node_binary, &pnpm_binary, &harness_root) {
+    if let Err(error) =
+        pnpm_install_harness(&node_binary, &pnpm_binary, &harness_root, &network_proxy)
+    {
         boot_log::info(&format!("pnpm install harness fallback: {error}"));
         if !harness_root.join("node_modules").join(".pnpm").is_dir() && !is_recoverable_io(&error) {
             return Err(error);
@@ -709,6 +716,7 @@ async fn fetch_node(
     node_dir: &Path,
     version: &str,
     progress: &impl Fn(ProvisionEvent),
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<(), String> {
     let spec = node_archive_spec(version)?;
     let cache = app_data_root()?.join("cache");
@@ -716,7 +724,7 @@ async fn fetch_node(
     let archive_path = cache.join(&spec.archive_name);
 
     if !archive_path.is_file() {
-        download_file(&spec.url, &archive_path, 15, 30, progress).await?;
+        download_file(&spec.url, &archive_path, 15, 30, progress, network_proxy).await?;
     }
 
     if node_dir.exists() {
@@ -869,12 +877,16 @@ pub(crate) async fn download_file(
     progress_start: u8,
     progress_end: u8,
     progress: &impl Fn(ProvisionEvent),
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<(), String> {
-    let client = reqwest::Client::builder()
-        .user_agent("dsh-desktop/0.1")
-        .timeout(NODE_DOWNLOAD_TIMEOUT)
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = apply_to_client(
+        reqwest::Client::builder()
+            .user_agent("dsh-desktop/0.1")
+            .timeout(NODE_DOWNLOAD_TIMEOUT),
+        network_proxy,
+    )?
+    .build()
+    .map_err(|e| e.to_string())?;
 
     let response = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !response.status().is_success() {
@@ -938,6 +950,7 @@ fn install_pnpm(
     pnpm_home: &Path,
     version: &str,
     bundled_toolchain: Option<&Path>,
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<(), String> {
     if pnpm_home.exists() {
         fs::remove_dir_all(pnpm_home).map_err(|e| e.to_string())?;
@@ -975,6 +988,7 @@ fn install_pnpm(
             cmd.arg("--registry").arg(&registry);
         }
         add_node_to_path(&mut cmd, node_binary)?;
+        apply_to_command(&mut cmd, network_proxy);
         hide_console(&mut cmd);
         wait_status_with_timeout(&mut cmd, PNPM_GLOBAL_INSTALL_TIMEOUT, "pnpm 安装")?
     } else {
@@ -1001,6 +1015,7 @@ fn install_pnpm(
             cmd.arg("--registry").arg(&registry);
         }
         add_node_to_path(&mut cmd, node_binary)?;
+        apply_to_command(&mut cmd, network_proxy);
         hide_console(&mut cmd);
         wait_status_with_timeout(&mut cmd, PNPM_GLOBAL_INSTALL_TIMEOUT, "pnpm 安装")?
     };
@@ -1138,6 +1153,7 @@ fn pnpm_install_harness(
     node_binary: &Path,
     pnpm_binary: &Path,
     harness_root: &Path,
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<(), String> {
     prepare_offline_pnpm_store(harness_root)?;
     let mut cmd = if let Some(entry) = pnpm_js_entry(pnpm_binary) {
@@ -1150,6 +1166,7 @@ fn pnpm_install_harness(
         return Err(format!("pnpm entry is missing: {}", pnpm_binary.display()));
     };
     configure_pnpm_install(&mut cmd, node_binary, harness_root)?;
+    apply_to_command(&mut cmd, network_proxy);
 
     let mut child = cmd
         .spawn()

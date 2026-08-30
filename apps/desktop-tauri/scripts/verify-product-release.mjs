@@ -31,12 +31,38 @@ const desktopShellSource = readFileSync(join(desktopRoot, 'shell.html'), 'utf8')
 const desktopI18nSource = readFileSync(join(desktopRoot, 'desktop-i18n.js'), 'utf8')
 const desktopAppIcon = readFileSync(join(desktopRoot, 'app-icon.png'))
 const desktopUpdateSmokeResult = 'Development build smoke does not check desktop updates'
+const desktopProxySystemSettings = {
+  mode: 'system',
+  httpProxy: '',
+  httpsProxy: '',
+  noProxy: '',
+}
+const desktopProxySnapshot = {
+  settings: { ...desktopProxySystemSettings, mode: 'direct' },
+  system: {
+    supported: true,
+    configured: true,
+    httpProxy: 'http://127.0.0.1:7890',
+    httpsProxy: 'http://127.0.0.1:7890',
+    noProxy: 'localhost,127.0.0.1,::1,*.local',
+    autoConfigUrl: '',
+    error: '',
+  },
+  effective: {
+    mode: 'direct',
+    httpProxy: '',
+    httpsProxy: '',
+    noProxy: 'localhost,127.0.0.1,::1',
+  },
+  effectiveError: '',
+}
 const missingMarketplaceRepository = 'missing-npm-package'
 const validMarketplaceRepository = 'verified-plugin-repository'
 const validMarketplacePackage = '@xiaohui-test/verified-plugin'
 const missingMarketplacePackage = '@xiaohui-test/repository-sdk'
 const validMarketplaceNonPluginPackage = '@xiaohui-test/verified-sdk'
 const syntheticInstallFailure = 'synthetic install failure'
+const syntheticHostProxy = 'http://127.0.0.1:9'
 
 /** Product Client packages that must execute during the assembled Web smoke. */
 export const PRODUCT_CLIENT_IDS = [
@@ -149,10 +175,14 @@ export function assertInstalledProductPeerLinks(root) {
  *
  * @param {string} workspace
  * @param {string} productRuntimeRoot
+ * @param {string | undefined} proxyVerifier
  * @returns {string}
  */
-export function buildProductSmokeOverlay(workspace, productRuntimeRoot) {
+export function buildProductSmokeOverlay(workspace, productRuntimeRoot, proxyVerifier) {
   const value = path => JSON.stringify(path)
+  const proxyVerifierRow = proxyVerifier === undefined ? '' : `    - id: xiaohui-release-proxy-verifier
+      name: ${value(proxyVerifier)}
+`
   return `- id: web
   config:
     searchProvider: codex
@@ -168,7 +198,7 @@ export function buildProductSmokeOverlay(workspace, productRuntimeRoot) {
       name: dsh-plugin-marketplace
     - id: xiaohui-release-personal-workbench
       name: dsh-personal-workbench
-    - id: xiaohui-release-harbor-evolution
+${proxyVerifierRow}    - id: xiaohui-release-harbor-evolution
       name: dsh-harbor-evolution
       config:
         projectRoot: ${value(workspace)}
@@ -354,6 +384,18 @@ function buildDesktopBridgeSmokeShell(baseUrl) {
           window.__XIAOHUI_DESKTOP_COMMANDS__.push({ command, args })
           if (command === 'open_marketplace_url') return
           if (command === 'check_for_updates') return ${JSON.stringify(desktopUpdateSmokeResult)}
+          if (command === 'get_network_proxy_settings') return ${JSON.stringify(desktopProxySnapshot)}
+          if (command === 'test_network_proxy_settings') return { status: 204, proxied: true }
+          if (command === 'save_network_proxy_settings') return {
+            ...${JSON.stringify(desktopProxySnapshot)},
+            settings: args.settings,
+            effective: {
+              ...args.settings,
+              httpProxy: ${JSON.stringify(desktopProxySnapshot.system.httpProxy)},
+              httpsProxy: ${JSON.stringify(desktopProxySnapshot.system.httpsProxy)},
+              noProxy: ${JSON.stringify(desktopProxySnapshot.system.noProxy)},
+            },
+          }
           if (command === 'restart_app') return new Promise(() => {})
           throw new Error('unexpected desktop command: ' + command)
         },
@@ -561,6 +603,16 @@ async function runBrowserSmoke(baseUrl, env) {
     if (await restart.isEnabled()) {
       throw new Error('standalone XiaoHui Web exposed the desktop-only restart action as enabled')
     }
+    const proxyTest = settings.getByRole('button', { name: 'Test ChatGPT connection', exact: true })
+    await proxyTest.waitFor({ timeout: 10_000 })
+    if (await proxyTest.isEnabled()) {
+      throw new Error('standalone XiaoHui Web exposed desktop network proxy testing as enabled')
+    }
+    const proxySave = settings.getByRole('button', { name: 'Save and restart XiaoHui', exact: true })
+    await proxySave.waitFor({ timeout: 10_000 })
+    if (await proxySave.isEnabled()) {
+      throw new Error('standalone XiaoHui Web exposed desktop network proxy persistence as enabled')
+    }
     await settings.getByRole('button', { name: 'Plugin Marketplace', exact: true }).click()
     await settings.getByPlaceholder('Search plugins (keyword, or empty to browse all)…', { exact: true }).waitFor({ timeout: 10_000 })
     await exerciseMarketplace(settings)
@@ -620,8 +672,9 @@ async function runBrowserSmoke(baseUrl, env) {
       undefined,
       { timeout: 10_000 },
     )
-    const invokedCommands = await page.evaluate(() => window.__XIAOHUI_DESKTOP_COMMANDS__)
-    const expectedCommands = [
+    const lifecycleCommands = await page.evaluate(() => window.__XIAOHUI_DESKTOP_COMMANDS__)
+    const expectedLifecycleCommands = [
+      { command: 'get_network_proxy_settings' },
       {
         command: 'open_marketplace_url',
         args: { url: `https://github.com/XiaoHui-test/${validMarketplaceRepository}` },
@@ -630,11 +683,12 @@ async function runBrowserSmoke(baseUrl, env) {
         command: 'open_marketplace_url',
         args: { url: `https://www.npmjs.com/package/${validMarketplacePackage}` },
       },
+      { command: 'get_network_proxy_settings' },
       { command: 'check_for_updates' },
       { command: 'restart_app' },
     ]
-    if (JSON.stringify(invokedCommands) !== JSON.stringify(expectedCommands)) {
-      throw new Error(`desktop controls invoked unexpected commands: ${JSON.stringify(invokedCommands)}`)
+    if (JSON.stringify(lifecycleCommands) !== JSON.stringify(expectedLifecycleCommands)) {
+      throw new Error(`desktop lifecycle controls invoked unexpected commands: ${JSON.stringify(lifecycleCommands)}`)
     }
     assertProductClientBoot({
       clientResponses,
@@ -642,6 +696,71 @@ async function runBrowserSmoke(baseUrl, env) {
       consoleErrors,
       bootFailureCount: await embedded.getByText('Failed to load plugins', { exact: true }).count(),
       frameCount: await embedded.locator('[class*="frame"]').count(),
+    })
+
+    const proxyPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
+    const proxyClientResponses = {}
+    proxyPage.on('pageerror', error => { pageErrors.push(String(error)) })
+    proxyPage.on('console', message => {
+      if (message.type() === 'error') consoleErrors.push(message.text())
+    })
+    proxyPage.on('response', response => {
+      const pathname = new URL(response.url()).pathname
+      for (const id of PRODUCT_CLIENT_IDS) {
+        if (pathname === `/plugins/${id}/client.js`) proxyClientResponses[id] = response.status()
+      }
+    })
+    const proxyShellNavigation = await proxyPage.goto(desktopBridge.url, { waitUntil: 'load', timeout: 30_000 })
+    if (proxyShellNavigation === null || proxyShellNavigation.status() !== 200) {
+      throw new Error(`XiaoHui proxy shell navigation returned HTTP ${proxyShellNavigation?.status() ?? 'no response'}`)
+    }
+    const proxyEmbedded = proxyPage.frameLocator('#app')
+    await proxyEmbedded.locator('[class*="frame"]').first().waitFor({ timeout: 30_000 })
+    await completeProductOnboarding(proxyEmbedded)
+    await proxyEmbedded.getByRole('button', { name: 'Settings', exact: true }).click()
+    const proxySettings = proxyEmbedded.getByRole('dialog', { name: 'Settings' })
+    await proxySettings.waitFor({ timeout: 10_000 })
+    await proxySettings.getByRole('button', { name: 'General', exact: true }).click()
+    const proxyMode = proxySettings.getByLabel('Connection mode', { exact: true })
+    try {
+      await proxyMode.waitFor({ timeout: 10_000 })
+    }
+    catch (error) {
+      throw new Error(`desktop proxy settings did not render the connection mode; text=${JSON.stringify(await proxySettings.textContent())}`, { cause: error })
+    }
+    await proxyMode.selectOption('system')
+    await proxySettings.getByText('HTTP_PROXY=http://127.0.0.1:7890', { exact: true }).waitFor({ timeout: 10_000 })
+    const embeddedProxyTest = proxySettings.getByRole('button', { name: 'Test ChatGPT connection', exact: true })
+    await embeddedProxyTest.click()
+    await proxySettings.getByText('Connection succeeded (HTTP 204).', { exact: true }).waitFor({ timeout: 10_000 })
+    const embeddedProxySave = proxySettings.getByRole('button', { name: 'Save and restart XiaoHui', exact: true })
+    await embeddedProxySave.click()
+    await proxySettings.getByText(
+      'Settings saved. Stopping the private Host and restarting XiaoHui…',
+      { exact: true },
+    ).waitFor({ timeout: 10_000 })
+    const proxyCommands = await proxyPage.evaluate(() => window.__XIAOHUI_DESKTOP_COMMANDS__)
+    const expectedProxyCommands = [
+      { command: 'get_network_proxy_settings' },
+      {
+        command: 'test_network_proxy_settings',
+        args: { settings: desktopProxySystemSettings },
+      },
+      {
+        command: 'save_network_proxy_settings',
+        args: { settings: desktopProxySystemSettings },
+      },
+      { command: 'restart_app' },
+    ]
+    if (JSON.stringify(proxyCommands) !== JSON.stringify(expectedProxyCommands)) {
+      throw new Error(`desktop proxy controls invoked unexpected commands: ${JSON.stringify(proxyCommands)}`)
+    }
+    assertProductClientBoot({
+      clientResponses: proxyClientResponses,
+      pageErrors,
+      consoleErrors,
+      bootFailureCount: await proxyEmbedded.getByText('Failed to load plugins', { exact: true }).count(),
+      frameCount: await proxyEmbedded.locator('[class*="frame"]').count(),
     })
   }
   catch (error) {
@@ -676,8 +795,41 @@ async function runBrowserSmoke(baseUrl, env) {
 async function runHostSmoke(root, productRuntimeRoot) {
   const world = mkdtempSync(join(tmpdir(), 'xiaohui-release-smoke-'))
   const overlay = join(world, 'product.overlay.yml')
-  writeFileSync(overlay, buildProductSmokeOverlay(world, productRuntimeRoot))
+  const proxyVerifier = join(world, 'proxy-dispatcher-verifier.mjs')
+  const proxyPackage = pathToFileURL(join(
+    root,
+    'packages',
+    'product',
+    'personal-workbench',
+    'package.json',
+  )).href
+  writeFileSync(proxyVerifier, `import { createRequire } from 'node:module'
+
+const require = createRequire(${JSON.stringify(proxyPackage)})
+const { EnvHttpProxyAgent, getGlobalDispatcher } = require('undici')
+
+export const name = 'xiaohui-release-proxy-verifier'
+
+export async function apply() {
+  const deadline = Date.now() + 1_000
+  while (!(getGlobalDispatcher() instanceof EnvHttpProxyAgent)) {
+    if (Date.now() >= deadline) throw new Error('application proxy Dispatcher is not active')
+    await new Promise(resolve => { setTimeout(resolve, 10) })
+  }
+}
+`)
+  writeFileSync(overlay, buildProductSmokeOverlay(world, productRuntimeRoot, proxyVerifier))
   const env = createReleaseChildEnvironment(world, productRuntimeRoot)
+  const hostEnv = {
+    ...env,
+    HTTP_PROXY: syntheticHostProxy,
+    HTTPS_PROXY: syntheticHostProxy,
+    NO_PROXY: 'localhost,127.0.0.1,::1',
+    http_proxy: syntheticHostProxy,
+    https_proxy: syntheticHostProxy,
+    no_proxy: 'localhost,127.0.0.1,::1',
+    NODE_USE_ENV_PROXY: '1',
+  }
   writeFileSync(join(env.DSH_HOME, 'settings.yaml'), `plugin-marketplace:
   install:
     pkg: ""
@@ -705,7 +857,7 @@ async function runHostSmoke(root, productRuntimeRoot) {
     '--no-open',
     '--host', '127.0.0.1',
     '--port', '0',
-  ], { cwd: world, env, stdio: ['ignore', 'pipe', 'pipe'] })
+  ], { cwd: world, env: hostEnv, stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
   const append = (current, chunk) => `${current}${chunk}`.slice(-32_000)
@@ -819,7 +971,7 @@ export async function verifyPreparedProduct(root = harnessRoot, productRuntimeRo
     run(join(productRuntimeRoot, 'venv', 'bin', 'harbor'), ['--version'], { cwd: commandWorld, env })
     run(join(productRuntimeRoot, 'venv', 'bin', 'harbor-dsh'), ['--help'], { cwd: commandWorld, env })
     await runHostSmoke(root, productRuntimeRoot)
-    console.log(`verify-product-release: ${installedPeers} bundled runtime peer links, ${PRODUCT_CLIENT_IDS.length} assembled Client plugins, the Plugin Marketplace, and the Application lifecycle controls passed`)
+    console.log(`verify-product-release: ${installedPeers} bundled runtime peer links, ${PRODUCT_CLIENT_IDS.length} assembled Client plugins, the Plugin Marketplace, Network proxy, and Application lifecycle controls passed`)
   }
   finally {
     removeWorkspaceInstallState(root)

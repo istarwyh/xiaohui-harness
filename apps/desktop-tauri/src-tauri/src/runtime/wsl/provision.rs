@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::i18n::{self, Msg};
+use crate::network_proxy::{env_arguments, ResolvedNetworkProxy};
 use crate::overlay::{linux_plugin_file_url, notification_overlay_yaml};
 use crate::runtime::config::{npm_registry, DEFAULT_NODE_VERSION, DEFAULT_PNPM_VERSION};
 use crate::runtime::host_env::node_version_compatible;
@@ -47,6 +48,7 @@ pub async fn ensure_wsl_runtime(
     windows_dsh_home: &Path,
     overlay_src: Option<&Path>,
     _notify_url: Option<&str>,
+    network_proxy: ResolvedNetworkProxy,
     progress: impl Fn(ProvisionEvent),
 ) -> Result<WslRuntimePaths, String> {
     progress(ProvisionEvent::Status(
@@ -76,6 +78,7 @@ pub async fn ensure_wsl_runtime(
         &preferred_node,
         &linux_runtime_root,
         &progress,
+        &network_proxy,
     )
     .await?;
     progress(ProvisionEvent::Progress(45));
@@ -86,7 +89,13 @@ pub async fn ensure_wsl_runtime(
         .ok_or_else(|| format!("{}: invalid node path {linux_node}", err_node()))?;
     let linux_path = format!("{node_bin_dir}:/usr/bin");
 
-    run_pnpm_install(runner, distro, &linux_path, &linux_harness_root)?;
+    run_pnpm_install(
+        runner,
+        distro,
+        &linux_path,
+        &linux_harness_root,
+        &network_proxy,
+    )?;
     progress(ProvisionEvent::Progress(75));
 
     seed_linux_home(runner, distro, windows_dsh_home, &linux_dsh_home)?;
@@ -151,6 +160,7 @@ async fn ensure_linux_node(
     preferred_node: &str,
     linux_runtime_root: &str,
     progress: &impl Fn(ProvisionEvent),
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<String, String> {
     if let Some(node) = probe_compatible_node(runner, distro, preferred_node)? {
         return Ok(node);
@@ -168,7 +178,15 @@ async fn ensure_linux_node(
         }
     }
 
-    install_linux_node(runner, distro, preferred_node, linux_runtime_root, progress).await
+    install_linux_node(
+        runner,
+        distro,
+        preferred_node,
+        linux_runtime_root,
+        progress,
+        network_proxy,
+    )
+    .await
 }
 
 /// True when `path` looks like a Windows Node image reached via `/mnt` or `.exe`.
@@ -213,6 +231,7 @@ async fn install_linux_node(
     preferred_node: &str,
     linux_runtime_root: &str,
     progress: &impl Fn(ProvisionEvent),
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<String, String> {
     // Re-check preferred before any download (e.g. prior extract already on disk).
     if let Some(node) = probe_compatible_node(runner, distro, preferred_node)? {
@@ -233,7 +252,7 @@ async fn install_linux_node(
             Msg::StatusDownloadLinuxNode,
             DEFAULT_NODE_VERSION,
         )));
-        download_file(&spec.url, &archive_path, 30, 40, progress)
+        download_file(&spec.url, &archive_path, 30, 40, progress, network_proxy)
             .await
             .map_err(|e| format!("{}: {e}", err_node()))?;
     }
@@ -288,6 +307,7 @@ fn run_pnpm_install(
     distro: &str,
     linux_path: &str,
     linux_harness_root: &str,
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<(), String> {
     let registry = npm_registry();
     let script = format!(
@@ -295,25 +315,30 @@ fn run_pnpm_install(
         pnpm = DEFAULT_PNPM_VERSION,
     );
     let path_env = format!("PATH={linux_path}");
-    let out = wsl_exec(
-        runner,
-        distro,
-        &[
-            "timeout",
-            PNPM_TIMEOUT_SECS,
-            "/usr/bin/env",
-            "-u",
-            "CI",
-            &path_env,
-            "/bin/sh",
-            "-c",
-            &script,
-            "pnpm-install",
-            linux_harness_root,
-            &registry,
-        ],
-    )
-    .map_err(|e| format!("{}: {e}", err_pnpm()))?;
+    let mut args = vec![
+        "-d".to_string(),
+        distro.to_string(),
+        "--exec".to_string(),
+        "timeout".to_string(),
+        PNPM_TIMEOUT_SECS.to_string(),
+        "/usr/bin/env".to_string(),
+        "-u".to_string(),
+        "CI".to_string(),
+    ];
+    args.extend(env_arguments(network_proxy));
+    args.extend([
+        path_env,
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        script,
+        "pnpm-install".to_string(),
+        linux_harness_root.to_string(),
+        registry,
+    ]);
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = runner
+        .run(&refs)
+        .map_err(|e| format!("{}: {e}", err_pnpm()))?;
     require_success(&out, err_pnpm())?;
     Ok(())
 }
@@ -433,6 +458,7 @@ fn require_success(out: &WslOutput, prefix: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{ensure_wsl_runtime, LINUX_PROBE_PATH};
+    use crate::network_proxy::{resolve, NetworkProxySettings};
     use crate::runtime::wsl::{WslOutput, WslRunner};
     use std::fs;
     use std::path::PathBuf;
@@ -663,6 +689,7 @@ mod tests {
                 &windows_home,
                 None,
                 None,
+                resolve(&NetworkProxySettings::default()).unwrap(),
                 |_| {},
             ))
             .expect("ensure_wsl_runtime");
@@ -855,6 +882,7 @@ mod tests {
                 &windows_home,
                 None,
                 None,
+                resolve(&NetworkProxySettings::default()).unwrap(),
                 |_| {},
             ))
             .expect("ensure_wsl_runtime");

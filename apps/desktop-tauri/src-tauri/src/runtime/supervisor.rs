@@ -14,6 +14,7 @@ use super::process::{
 use super::provision::RuntimePaths;
 use super::wsl::{build_wsl_web_command, WslLaunchSpec, WslRunner, WslRuntimePaths};
 use crate::i18n::{self, Msg};
+use crate::network_proxy::{apply_to_command, ResolvedNetworkProxy};
 
 /// Maximum broken plugins one boot disables before giving up on the Host.
 const MAX_PLUGIN_RESCUES: usize = 4;
@@ -86,6 +87,7 @@ pub async fn spawn_web_host(
     paths: &RuntimePaths,
     overlay: Option<&HostOverlay>,
     host_path: &str,
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<HostHandle, String> {
     if !paths.cli_entry.is_file() {
         return Err(format!(
@@ -114,7 +116,14 @@ pub async fn spawn_web_host(
                 disabled_plugins.join(",")
             }
         ));
-        let child = spawn_child(paths, port, overlay, host_path, rescue_patch.as_deref())?;
+        let child = spawn_child(
+            paths,
+            port,
+            overlay,
+            host_path,
+            rescue_patch.as_deref(),
+            network_proxy,
+        )?;
         let pid = child.id();
         #[cfg(windows)]
         let job = attach_host_job(&child);
@@ -198,6 +207,7 @@ pub async fn spawn_wsl_web_host(
     paths: &WslRuntimePaths,
     overlay: Option<&HostOverlay>,
     _runner: &dyn WslRunner,
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<HostHandle, String> {
     reclaim_stale_host(&host_pid_path());
     let port = pick_port(DEFAULT_WEB_PORT)?;
@@ -221,7 +231,7 @@ pub async fn spawn_wsl_web_host(
         paths.distro, paths.linux_node, paths.linux_cli
     ));
 
-    let command = build_wsl_web_command(&spec)?;
+    let command = build_wsl_web_command(&spec, network_proxy)?;
     let mut child = spawn_wsl_child(&command)?;
     let stub_pid = child.id();
     #[cfg(windows)]
@@ -515,6 +525,7 @@ fn spawn_child(
     overlay: Option<&HostOverlay>,
     host_path: &str,
     rescue_patch: Option<&Path>,
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<Child, String> {
     let mut cmd = Command::new(&paths.node_binary);
     cmd.args(native_web_args(
@@ -532,6 +543,7 @@ fn spawn_child(
         .current_dir(&paths.harness_root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    apply_to_command(&mut cmd, network_proxy);
 
     isolate_host_group(&mut cmd);
     hide_console(&mut cmd);

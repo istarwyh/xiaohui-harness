@@ -13,6 +13,7 @@ use super::provision::{pnpm_js_entry, RuntimePaths};
 use super::user_home::{profile_dependencies_unresolved, profiles_needing_install};
 use super::ProvisionEvent;
 use crate::i18n::{self, Msg};
+use crate::network_proxy::{apply_to_command, ResolvedNetworkProxy};
 
 /// How long one `dsh plugin --profile <name> install` may run before it is killed.
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
@@ -47,6 +48,7 @@ pub async fn ensure_profile_installs(
     paths: &RuntimePaths,
     host_path: &str,
     progress: &Arc<dyn Fn(ProvisionEvent) + Send + Sync>,
+    network_proxy: &ResolvedNetworkProxy,
 ) -> Result<(), String> {
     let mut pending = rebind_managed_product_links(paths)?;
     for name in profiles_needing_install(&paths.dsh_home) {
@@ -67,8 +69,9 @@ pub async fn ensure_profile_installs(
         let paths = paths.clone();
         let host_path = host_path.to_string();
         let name_for_task = name.clone();
+        let network_proxy = network_proxy.clone();
         let result = tokio::task::spawn_blocking(move || {
-            run_profile_install(&paths, &host_path, &name_for_task)
+            run_profile_install(&paths, &host_path, &name_for_task, &network_proxy)
         })
         .await
         .map_err(|e| format!("profile {name} 安装任务失败: {e}"))?;
@@ -172,7 +175,12 @@ fn rebind_managed_product_links(paths: &RuntimePaths) -> Result<Vec<String>, Str
 }
 
 /// Run one install and re-verify the profile can resolve its dependencies.
-fn run_profile_install(paths: &RuntimePaths, host_path: &str, name: &str) -> Result<(), String> {
+fn run_profile_install(
+    paths: &RuntimePaths,
+    host_path: &str,
+    name: &str,
+    network_proxy: &ResolvedNetworkProxy,
+) -> Result<(), String> {
     let profile_dir = profile_dir(&paths.dsh_home, name);
     let mut cmd = Command::new(&paths.node_binary);
     if let Some(entry) = pnpm_js_entry(&paths.pnpm_binary) {
@@ -190,6 +198,7 @@ fn run_profile_install(paths: &RuntimePaths, host_path: &str, name: &str) -> Res
         .env("NODE_ENV", "production")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    apply_to_command(&mut cmd, network_proxy);
     hide_console(&mut cmd);
     let mut child = cmd
         .spawn()

@@ -1,7 +1,7 @@
 {
   "name": "dsh-personal-workbench",
   "version": "0.1.0",
-  "description": "XiaoHui workbench branding and desktop application lifecycle controls",
+  "description": "XiaoHui workbench branding, application lifecycle, and network proxy controls",
   "type": "module",
   "private": true,
   "main": "index.js",
@@ -42,6 +42,9 @@
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "check": "pnpm run typecheck && pnpm run test && pnpm run build"
+  },
+  "dependencies": {
+    "undici": "^8.10.0"
   },
   "devDependencies": {
     "@types/react": "~18.3.31",

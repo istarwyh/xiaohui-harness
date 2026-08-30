@@ -417,6 +417,364 @@ function ApplicationLifecycleRow({ t }) {
   ] });
 }
 
+// src/client/NetworkProxyRow.tsx
+var import_react3 = require("react");
+
+// src/client/desktop-network-proxy.ts
+var DESKTOP_NETWORK_PROXY_CHANNEL = "xiaohui.desktop.network-proxy";
+var DESKTOP_NETWORK_PROXY_VERSION = 1;
+var REQUEST_ID_PATTERN2 = /^[A-Za-z0-9_-]{1,64}$/;
+var DEFAULT_HANDSHAKE_TIMEOUT_MS2 = 5e3;
+var MAX_PROXY_URL_LENGTH = 2048;
+var MAX_NO_PROXY_LENGTH = 4096;
+function createRequestId2() {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function isDesktopNetworkProxyAvailable(target = typeof window === "undefined" ? void 0 : window) {
+  return target !== void 0 && target.parent !== target;
+}
+function hasExactKeys(value, expected) {
+  return Object.keys(value).sort().join(",") === expected;
+}
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function readNetworkProxySettings(value) {
+  if (!isRecord(value) || !hasExactKeys(value, "httpProxy,httpsProxy,mode,noProxy") || !["direct", "system", "custom"].includes(String(value.mode)) || typeof value.httpProxy !== "string" || value.httpProxy.length > MAX_PROXY_URL_LENGTH || typeof value.httpsProxy !== "string" || value.httpsProxy.length > MAX_PROXY_URL_LENGTH || typeof value.noProxy !== "string" || value.noProxy.length > MAX_NO_PROXY_LENGTH) return void 0;
+  return value;
+}
+function readEffectiveProxy(value) {
+  return readNetworkProxySettings(value);
+}
+function readSystemProxy(value) {
+  if (!isRecord(value) || !hasExactKeys(
+    value,
+    "autoConfigUrl,configured,error,httpProxy,httpsProxy,noProxy,supported"
+  ) || typeof value.supported !== "boolean" || typeof value.configured !== "boolean" || typeof value.httpProxy !== "string" || value.httpProxy.length > MAX_PROXY_URL_LENGTH || typeof value.httpsProxy !== "string" || value.httpsProxy.length > MAX_PROXY_URL_LENGTH || typeof value.noProxy !== "string" || value.noProxy.length > MAX_NO_PROXY_LENGTH || typeof value.autoConfigUrl !== "string" || value.autoConfigUrl.length > MAX_PROXY_URL_LENGTH || typeof value.error !== "string" || value.error.length > MAX_PROXY_URL_LENGTH) return void 0;
+  return value;
+}
+function readSnapshot(value) {
+  if (!isRecord(value)) return void 0;
+  const keys = Object.keys(value).sort().join(",");
+  if (keys !== "effective,effectiveError,settings,system" && keys !== "effectiveError,settings,system") return void 0;
+  const settings = readNetworkProxySettings(value.settings);
+  const system = readSystemProxy(value.system);
+  if (settings === void 0 || system === void 0 || typeof value.effectiveError !== "string" || value.effectiveError.length > MAX_PROXY_URL_LENGTH) return void 0;
+  const effective = value.effective === void 0 ? void 0 : readEffectiveProxy(value.effective);
+  if (value.effective !== void 0 && effective === void 0) return void 0;
+  return {
+    settings,
+    system,
+    ...effective === void 0 ? {} : { effective },
+    effectiveError: value.effectiveError
+  };
+}
+function readTestResult(value) {
+  if (!isRecord(value) || !hasExactKeys(value, "proxied,status") || typeof value.proxied !== "boolean" || !Number.isSafeInteger(value.status) || Number(value.status) < 100 || Number(value.status) > 599) return void 0;
+  return value;
+}
+function readDesktopNetworkProxyResponse(value, requestId, action) {
+  if (!isRecord(value) || value.channel !== DESKTOP_NETWORK_PROXY_CHANNEL || value.version !== DESKTOP_NETWORK_PROXY_VERSION || value.requestId !== requestId) return void 0;
+  if (value.type === `${action}-accepted`) {
+    return hasExactKeys(value, "channel,requestId,type,version") ? value : void 0;
+  }
+  if (value.type !== `${action}-response` || typeof value.ok !== "boolean") return void 0;
+  if (value.ok) {
+    if (!hasExactKeys(value, "channel,ok,requestId,type,value,version")) return void 0;
+    const parsed = action === "test" ? readTestResult(value.value) : readSnapshot(value.value);
+    if (parsed === void 0) return void 0;
+  } else if (!hasExactKeys(value, "channel,error,ok,requestId,type,version") || typeof value.error !== "string" || value.error.length > MAX_PROXY_URL_LENGTH) return void 0;
+  return value;
+}
+function requestDesktopNetworkProxy(action, settings, options) {
+  const target = options.target ?? window;
+  if (!isDesktopNetworkProxyAvailable(target)) {
+    return Promise.reject(new Error("desktop-shell-unavailable"));
+  }
+  const requestId = options.requestId ?? createRequestId2();
+  if (!REQUEST_ID_PATTERN2.test(requestId)) {
+    return Promise.reject(new Error("desktop-network-proxy-request-id-invalid"));
+  }
+  if (action !== "get" && readNetworkProxySettings(settings) === void 0) {
+    return Promise.reject(new Error("desktop-network-proxy-settings-invalid"));
+  }
+  return new Promise((resolve, reject) => {
+    const parent = target.parent;
+    let handshakeTimeout;
+    const cleanup = () => {
+      if (handshakeTimeout !== void 0) target.clearTimeout(handshakeTimeout);
+      handshakeTimeout = void 0;
+      target.removeEventListener("message", onMessage);
+    };
+    const onMessage = (event) => {
+      if (event.source !== parent) return;
+      const response = readDesktopNetworkProxyResponse(event.data, requestId, action);
+      if (response === void 0) return;
+      if (response.type === `${action}-accepted`) {
+        if (handshakeTimeout !== void 0) target.clearTimeout(handshakeTimeout);
+        handshakeTimeout = void 0;
+        return;
+      }
+      cleanup();
+      const result = response;
+      if (result.ok && result.value !== void 0) resolve(result.value);
+      else reject(new Error(result.error ?? `desktop-network-proxy-${action}-failed`));
+    };
+    handshakeTimeout = target.setTimeout(() => {
+      cleanup();
+      reject(new Error("desktop-shell-unavailable"));
+    }, options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS2);
+    target.addEventListener("message", onMessage);
+    parent.postMessage({
+      channel: DESKTOP_NETWORK_PROXY_CHANNEL,
+      version: DESKTOP_NETWORK_PROXY_VERSION,
+      type: `${action}-request`,
+      requestId,
+      ...settings === void 0 ? {} : { settings }
+    }, "*");
+  });
+}
+async function requestDesktopNetworkProxySnapshot(options = {}) {
+  return await requestDesktopNetworkProxy("get", void 0, options);
+}
+async function requestDesktopNetworkProxyTest(settings, options = {}) {
+  return await requestDesktopNetworkProxy("test", settings, options);
+}
+async function requestDesktopNetworkProxySave(settings, options = {}) {
+  return await requestDesktopNetworkProxy("save", settings, options);
+}
+
+// src/client/NetworkProxyRow.tsx
+var import_jsx_runtime4 = require("react/jsx-runtime");
+var EMPTY_SETTINGS = {
+  mode: "direct",
+  httpProxy: "",
+  httpsProxy: "",
+  noProxy: ""
+};
+function NetworkProxyRow({ t }) {
+  const [available] = (0, import_react3.useState)(() => isDesktopNetworkProxyAvailable());
+  const [snapshot, setSnapshot] = (0, import_react3.useState)(null);
+  const [draft, setDraft] = (0, import_react3.useState)(EMPTY_SETTINGS);
+  const [status, setStatus] = (0, import_react3.useState)(available ? "loading" : "idle");
+  const [detail, setDetail] = (0, import_react3.useState)("");
+  (0, import_react3.useEffect)(() => {
+    if (!available) return;
+    let active = true;
+    void requestDesktopNetworkProxySnapshot().then((value) => {
+      if (!active) return;
+      setSnapshot(value);
+      setDraft(value.settings);
+      setStatus("idle");
+    }).catch((error) => {
+      if (!active) return;
+      setDetail(errorMessage(error));
+      setStatus("error");
+    });
+    return () => {
+      active = false;
+    };
+  }, [available]);
+  const refresh = async () => {
+    setStatus("refreshing");
+    setDetail("");
+    try {
+      setSnapshot(await requestDesktopNetworkProxySnapshot());
+      setStatus("idle");
+    } catch (error) {
+      setDetail(errorMessage(error));
+      setStatus("error");
+    }
+  };
+  const test = async () => {
+    setStatus("testing");
+    setDetail("");
+    try {
+      const result = await requestDesktopNetworkProxyTest(draft);
+      setDetail(String(result.status));
+      setStatus("tested");
+    } catch (error) {
+      setDetail(errorMessage(error));
+      setStatus("error");
+    }
+  };
+  const saveAndRestart = async () => {
+    setStatus("saving");
+    setDetail("");
+    try {
+      const saved = await requestDesktopNetworkProxySave(draft);
+      setSnapshot(saved);
+      setStatus("restarting");
+      await requestDesktopRestart();
+    } catch (error) {
+      setDetail(errorMessage(error));
+      setStatus("error");
+    }
+  };
+  const busy = ["loading", "refreshing", "testing", "saving", "restarting"].includes(status);
+  const systemBlocked = draft.mode === "system" && snapshot?.system.supported === false;
+  const setField = (field) => (event) => {
+    setDraft((value) => ({ ...value, [field]: event.target.value }));
+    setStatus("idle");
+    setDetail("");
+  };
+  const setMode = (event) => {
+    setDraft((value) => ({ ...value, mode: event.target.value }));
+    setStatus("idle");
+    setDetail("");
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("section", { className: "dpw-card", "aria-labelledby": "dpw-network-proxy-title", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dpw-heading", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { id: "dpw-network-proxy-title", className: "dpw-title", children: t("proxy.title") }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-description", children: t("proxy.description") })
+    ] }),
+    !available && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status", children: t("proxy.desktop-only") }),
+    available && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dpw-fields", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { className: "dpw-field dpw-field-wide", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dpw-label", children: t("proxy.mode.label") }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          "select",
+          {
+            className: "dpw-input",
+            value: draft.mode,
+            disabled: busy,
+            "aria-label": t("proxy.mode.label"),
+            onChange: setMode,
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "system", children: t("proxy.mode.system") }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "custom", children: t("proxy.mode.custom") }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "direct", children: t("proxy.mode.direct") })
+            ]
+          }
+        )
+      ] }),
+      draft.mode === "system" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dpw-proxy-panel dpw-field-wide", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-label", children: t("proxy.system.detected") }),
+        snapshot?.system.supported === true && snapshot.system.configured && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dpw-code", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+            "HTTP_PROXY=",
+            snapshot.system.httpProxy || t("proxy.value.direct")
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+            "HTTPS_PROXY=",
+            snapshot.system.httpsProxy || t("proxy.value.direct")
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+            "NO_PROXY=",
+            snapshot.system.noProxy
+          ] })
+        ] }),
+        snapshot?.system.supported === true && !snapshot.system.configured && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-hint", children: t("proxy.system.none") }),
+        snapshot?.system.supported === false && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-error", children: localizedProxyError(snapshot.system.error, t) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: "dpw-button", disabled: busy, onClick: () => {
+          void refresh();
+        }, children: status === "refreshing" ? t("proxy.system.refreshing") : t("proxy.system.refresh") })
+      ] }),
+      draft.mode === "custom" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { className: "dpw-field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dpw-label", children: t("proxy.http.label") }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            "input",
+            {
+              className: "dpw-input",
+              value: draft.httpProxy,
+              disabled: busy,
+              placeholder: "http://127.0.0.1:7890",
+              autoCapitalize: "none",
+              autoCorrect: "off",
+              spellCheck: false,
+              onChange: setField("httpProxy")
+            }
+          )
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { className: "dpw-field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dpw-label", children: t("proxy.https.label") }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            "input",
+            {
+              className: "dpw-input",
+              value: draft.httpsProxy,
+              disabled: busy,
+              placeholder: "http://127.0.0.1:7890",
+              autoCapitalize: "none",
+              autoCorrect: "off",
+              spellCheck: false,
+              onChange: setField("httpsProxy")
+            }
+          )
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { className: "dpw-field dpw-field-wide", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dpw-label", children: t("proxy.no-proxy.label") }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            "input",
+            {
+              className: "dpw-input",
+              value: draft.noProxy,
+              disabled: busy,
+              placeholder: "localhost,127.0.0.1,*.local",
+              autoCapitalize: "none",
+              autoCorrect: "off",
+              spellCheck: false,
+              onChange: setField("noProxy")
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dpw-hint", children: t("proxy.custom.hint") })
+        ] })
+      ] }),
+      draft.mode === "direct" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-hint dpw-field-wide", children: t("proxy.direct.hint") })
+    ] }),
+    status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status", role: "status", children: t("proxy.loading") }),
+    status === "testing" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status", role: "status", children: t("proxy.test.testing") }),
+    status === "tested" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status dpw-success", role: "status", children: t("proxy.test.success").replace("{status}", detail) }),
+    status === "saving" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status", role: "status", children: t("proxy.save.saving") }),
+    status === "restarting" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status", role: "status", children: t("proxy.save.restarting") }),
+    status === "error" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-error", role: "alert", children: localizedProxyError(detail, t) }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dpw-actions", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "dpw-button",
+          disabled: !available || busy || systemBlocked,
+          onClick: () => {
+            void test();
+          },
+          children: status === "testing" ? t("proxy.test.testing-action") : t("proxy.test.action")
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "dpw-button dpw-button-primary",
+          disabled: !available || busy || systemBlocked,
+          onClick: () => {
+            void saveAndRestart();
+          },
+          children: status === "saving" || status === "restarting" ? t("proxy.save.restarting-action") : t("proxy.save.action")
+        }
+      )
+    ] })
+  ] });
+}
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+function localizedProxyError(error, t) {
+  if (error === "desktop-shell-unavailable") return t("proxy.shell-unavailable");
+  if (error.includes("network-proxy-system-auto-config-unsupported")) return t("proxy.error.pac");
+  if (error.includes("network-proxy-system-http-only-unsupported")) return t("proxy.error.http-only");
+  if (error.includes("network-proxy-system-unsupported-platform")) return t("proxy.error.platform");
+  if (error.includes("network-proxy-custom-http-and-https-required")) return t("proxy.error.required");
+  if (error.includes("network-proxy-scheme-unsupported")) return t("proxy.error.scheme");
+  if (error.includes("network-proxy-url-invalid")) return t("proxy.error.url");
+  if (error.includes("network-proxy-no-proxy-invalid")) return t("proxy.error.no-proxy");
+  if (error.includes("network-proxy-test")) return t("proxy.error.test");
+  return `${t("proxy.error.generic")} ${error}`;
+}
+
 // src/client/locales.ts
 var zh = {
   "title": "\u6211\u7684\u5DE5\u4F5C\u53F0",
@@ -437,6 +795,42 @@ var zh = {
   "error.name": "\u8BF7\u8F93\u5165\u5DE5\u4F5C\u53F0\u540D\u79F0\u3002",
   "error.read": "\u56FE\u7247\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002",
   "error.save": "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u6587\u4EF6\u540E\u91CD\u8BD5\u3002",
+  "proxy.title": "\u7F51\u7EDC\u4EE3\u7406",
+  "proxy.description": "\u4E3A XiaoHui Harness\u3001\u79C1\u6709 Host\u3001\u63D2\u4EF6\u548C\u5E94\u7528\u66F4\u65B0\u7EDF\u4E00\u8BBE\u7F6E\u7F51\u7EDC\u4EE3\u7406\u3002\u4FDD\u5B58\u540E\u4F1A\u91CD\u542F\u5E94\u7528\u3002",
+  "proxy.desktop-only": "\u8BF7\u5728 XiaoHui Harness \u684C\u9762\u5E94\u7528\u4E2D\u914D\u7F6E\u7F51\u7EDC\u4EE3\u7406\u3002",
+  "proxy.shell-unavailable": "\u684C\u9762\u7F51\u7EDC\u4EE3\u7406\u670D\u52A1\u672A\u54CD\u5E94\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00 XiaoHui Harness \u540E\u91CD\u8BD5\u3002",
+  "proxy.mode.label": "\u8FDE\u63A5\u65B9\u5F0F",
+  "proxy.mode.system": "\u8DDF\u968F macOS \u7CFB\u7EDF\u4EE3\u7406",
+  "proxy.mode.custom": "\u81EA\u5B9A\u4E49\u4EE3\u7406",
+  "proxy.mode.direct": "\u76F4\u63A5\u8FDE\u63A5",
+  "proxy.system.detected": "\u5F53\u524D\u7CFB\u7EDF\u4EE3\u7406",
+  "proxy.system.none": "macOS \u5F53\u524D\u672A\u542F\u7528\u56FA\u5B9A HTTP/HTTPS \u4EE3\u7406\u3002",
+  "proxy.system.refresh": "\u91CD\u65B0\u8BFB\u53D6\u7CFB\u7EDF\u4EE3\u7406",
+  "proxy.system.refreshing": "\u6B63\u5728\u8BFB\u53D6\u2026",
+  "proxy.value.direct": "\u76F4\u8FDE",
+  "proxy.http.label": "HTTP \u4EE3\u7406",
+  "proxy.https.label": "HTTPS \u4EE3\u7406",
+  "proxy.no-proxy.label": "\u4E0D\u4F7F\u7528\u4EE3\u7406\u7684\u5730\u5740",
+  "proxy.custom.hint": "\u9700\u8981\u540C\u65F6\u586B\u5199 HTTP \u4E0E HTTPS \u4EE3\u7406\u3002\u4EC5\u652F\u6301\u65E0\u8D26\u53F7\u5BC6\u7801\u7684 http:// \u6216 https:// \u5730\u5740\uFF1B\u672C\u673A Host \u5730\u5740\u59CB\u7EC8\u76F4\u8FDE\u3002",
+  "proxy.direct.hint": "\u5FFD\u7565\u542F\u52A8\u73AF\u5883\u4E2D\u7684\u4EE3\u7406\u53D8\u91CF\uFF0C\u7531 XiaoHui \u76F4\u63A5\u8FDE\u63A5\u5916\u90E8\u7F51\u7EDC\u3002",
+  "proxy.loading": "\u6B63\u5728\u8BFB\u53D6\u7F51\u7EDC\u4EE3\u7406\u8BBE\u7F6E\u2026",
+  "proxy.test.action": "\u6D4B\u8BD5 ChatGPT \u8FDE\u63A5",
+  "proxy.test.testing-action": "\u6B63\u5728\u6D4B\u8BD5\u2026",
+  "proxy.test.testing": "\u6B63\u5728\u4F7F\u7528\u5F53\u524D\u8349\u7A3F\u8FDE\u63A5 ChatGPT\u2026",
+  "proxy.test.success": "\u8FDE\u63A5\u6210\u529F\uFF08HTTP {status}\uFF09\u3002",
+  "proxy.save.action": "\u4FDD\u5B58\u5E76\u91CD\u542F XiaoHui",
+  "proxy.save.saving": "\u6B63\u5728\u4FDD\u5B58\u7F51\u7EDC\u4EE3\u7406\u8BBE\u7F6E\u2026",
+  "proxy.save.restarting-action": "\u6B63\u5728\u91CD\u542F\u2026",
+  "proxy.save.restarting": "\u8BBE\u7F6E\u5DF2\u4FDD\u5B58\uFF0C\u6B63\u5728\u505C\u6B62\u79C1\u6709 Host \u5E76\u91CD\u542F XiaoHui\u2026",
+  "proxy.error.pac": "\u68C0\u6D4B\u5230 PAC \u6216\u81EA\u52A8\u4EE3\u7406\u53D1\u73B0\u3002\u5F53\u524D\u7248\u672C\u65E0\u6CD5\u628A\u52A8\u6001\u4EE3\u7406\u89C4\u5219\u8F6C\u6362\u7ED9 Node\uFF0C\u8BF7\u6539\u7528\u81EA\u5B9A\u4E49\u4EE3\u7406\u3002",
+  "proxy.error.http-only": "\u7CFB\u7EDF\u53EA\u542F\u7528\u4E86 HTTP \u4EE3\u7406\uFF0C\u65E0\u6CD5\u5FE0\u5B9E\u5E94\u7528\u5230\u6240\u6709 Node \u8BF7\u6C42\uFF1B\u8BF7\u540C\u65F6\u542F\u7528 HTTPS \u4EE3\u7406\u6216\u6539\u7528\u81EA\u5B9A\u4E49\u4EE3\u7406\u3002",
+  "proxy.error.platform": "\u5F53\u524D\u5E73\u53F0\u4E0D\u652F\u6301\u81EA\u52A8\u8BFB\u53D6\u7CFB\u7EDF\u4EE3\u7406\uFF0C\u8BF7\u4F7F\u7528\u81EA\u5B9A\u4E49\u4EE3\u7406\u3002",
+  "proxy.error.required": "\u81EA\u5B9A\u4E49\u6A21\u5F0F\u9700\u8981\u540C\u65F6\u586B\u5199 HTTP \u4E0E HTTPS \u4EE3\u7406\u3002",
+  "proxy.error.scheme": "\u4EE3\u7406\u5730\u5740\u4EC5\u652F\u6301 http:// \u6216 https://\u3002",
+  "proxy.error.url": "\u4EE3\u7406\u5730\u5740\u65E0\u6548\uFF0C\u4E14\u4E0D\u80FD\u5305\u542B\u8D26\u53F7\u3001\u5BC6\u7801\u3001\u8DEF\u5F84\u3001\u67E5\u8BE2\u53C2\u6570\u6216\u7247\u6BB5\u3002",
+  "proxy.error.no-proxy": "\u4E0D\u4F7F\u7528\u4EE3\u7406\u7684\u5730\u5740\u5217\u8868\u65E0\u6548\u3002",
+  "proxy.error.test": "\u65E0\u6CD5\u901A\u8FC7\u5F53\u524D\u8BBE\u7F6E\u8FDE\u63A5 ChatGPT\uFF0C\u8BF7\u786E\u8BA4\u4EE3\u7406\u6B63\u5728\u8FD0\u884C\u3002",
+  "proxy.error.generic": "\u7F51\u7EDC\u4EE3\u7406\u64CD\u4F5C\u5931\u8D25\uFF1A",
   "lifecycle.title": "\u5E94\u7528\u751F\u547D\u5468\u671F",
   "lifecycle.description": "\u7BA1\u7406 XiaoHui Harness \u7684\u66F4\u65B0\u4E0E\u91CD\u542F\u3002\u91CD\u542F\u4F1A\u505C\u6B62\u5F53\u524D\u79C1\u6709 Host\uFF0C\u5E76\u5728\u91CD\u65B0\u6253\u5F00\u65F6\u52A0\u8F7D\u65B0\u5B89\u88C5\u7684\u63D2\u4EF6\u3002",
   "lifecycle.desktop-only": "\u8BF7\u5728 XiaoHui Harness \u684C\u9762\u5E94\u7528\u4E2D\u4F7F\u7528\u8FD9\u4E9B\u529F\u80FD\u3002",
@@ -469,6 +863,42 @@ var en = {
   "error.name": "Enter a workbench name.",
   "error.read": "The image could not be read. Try again.",
   "error.save": "Could not save. Check the settings document and try again.",
+  "proxy.title": "Network proxy",
+  "proxy.description": "Configure one network proxy for XiaoHui Harness, its private Host, plugins, and application updates. Saving restarts the app.",
+  "proxy.desktop-only": "Configure the network proxy in the XiaoHui Harness desktop application.",
+  "proxy.shell-unavailable": "The desktop network proxy service did not respond. Reopen XiaoHui Harness and try again.",
+  "proxy.mode.label": "Connection mode",
+  "proxy.mode.system": "Follow macOS system proxy",
+  "proxy.mode.custom": "Custom proxy",
+  "proxy.mode.direct": "Direct connection",
+  "proxy.system.detected": "Current system proxy",
+  "proxy.system.none": "macOS has no fixed HTTP/HTTPS proxy enabled.",
+  "proxy.system.refresh": "Read system proxy again",
+  "proxy.system.refreshing": "Reading\u2026",
+  "proxy.value.direct": "direct",
+  "proxy.http.label": "HTTP proxy",
+  "proxy.https.label": "HTTPS proxy",
+  "proxy.no-proxy.label": "Addresses that bypass the proxy",
+  "proxy.custom.hint": "Both HTTP and HTTPS proxies are required. Only credential-free http:// or https:// URLs are accepted; the local Host always connects directly.",
+  "proxy.direct.hint": "Ignore proxy variables from the launch environment and connect to external networks directly.",
+  "proxy.loading": "Loading network proxy settings\u2026",
+  "proxy.test.action": "Test ChatGPT connection",
+  "proxy.test.testing-action": "Testing\u2026",
+  "proxy.test.testing": "Connecting to ChatGPT with the current draft\u2026",
+  "proxy.test.success": "Connection succeeded (HTTP {status}).",
+  "proxy.save.action": "Save and restart XiaoHui",
+  "proxy.save.saving": "Saving network proxy settings\u2026",
+  "proxy.save.restarting-action": "Restarting\u2026",
+  "proxy.save.restarting": "Settings saved. Stopping the private Host and restarting XiaoHui\u2026",
+  "proxy.error.pac": "A PAC URL or automatic proxy discovery is enabled. This version cannot translate dynamic rules for Node; use a custom proxy.",
+  "proxy.error.http-only": "Only the system HTTP proxy is enabled, so it cannot be applied faithfully to every Node request. Enable HTTPS proxy too or use a custom proxy.",
+  "proxy.error.platform": "Automatic system proxy detection is unavailable on this platform. Use a custom proxy.",
+  "proxy.error.required": "Custom mode requires both HTTP and HTTPS proxy URLs.",
+  "proxy.error.scheme": "Proxy URLs support only http:// or https://.",
+  "proxy.error.url": "The proxy URL is invalid and cannot contain a username, password, path, query, or fragment.",
+  "proxy.error.no-proxy": "The proxy bypass list is invalid.",
+  "proxy.error.test": "Could not connect to ChatGPT with these settings. Confirm that the proxy is running.",
+  "proxy.error.generic": "Network proxy operation failed:",
   "lifecycle.title": "Application lifecycle",
   "lifecycle.description": "Manage XiaoHui Harness updates and restarts. Restart stops the private Host and loads newly installed plugins when the app opens again.",
   "lifecycle.desktop-only": "Use these actions in the XiaoHui Harness desktop application.",
@@ -494,6 +924,8 @@ var PERSONAL_WORKBENCH_CSS = `
 .dpw-preview-mark img{width:100%;height:100%;object-fit:contain}.dpw-preview-copy{display:grid;gap:2px;min-width:0}
 .dpw-preview-label{font-size:12px;color:var(--dsw-alias-label-secondary)}.dpw-preview-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:18px;font-weight:650;color:var(--dsw-alias-label-primary)}
 .dpw-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}.dpw-field{display:grid;align-content:start;gap:8px}
+.dpw-field-wide{grid-column:1/-1}.dpw-proxy-panel{display:grid;gap:10px;padding:12px;border-radius:12px;background:var(--dsw-alias-bg-layer-2)}
+.dpw-code{display:grid;gap:4px;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:var(--dsw-alias-label-secondary)}
 .dpw-label{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}.dpw-input{box-sizing:border-box;width:100%;height:38px;padding:0 11px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit}
 .dpw-upload-row,.dpw-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dpw-file{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
 .dpw-button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 13px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer}
@@ -595,8 +1027,14 @@ function apply(ctx) {
   }, BrandSettingsRow));
   ctx.slots.inject("settings.general.item", () => ctx.slots.register({
     name: "settings.general.item",
-    id: "application-lifecycle",
+    id: "network-proxy",
     order: 30,
+    locale: SETTINGS_LOCALE_NAMESPACE
+  }, NetworkProxyRow));
+  ctx.slots.inject("settings.general.item", () => ctx.slots.register({
+    name: "settings.general.item",
+    id: "application-lifecycle",
+    order: 40,
     locale: SETTINGS_LOCALE_NAMESPACE
   }, ApplicationLifecycleRow));
 }

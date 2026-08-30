@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::network_proxy::NetworkProxySettings;
 use crate::runtime::app_data_root;
 
 /// What the title-bar / window close button does after the user has chosen.
@@ -34,6 +35,8 @@ pub struct DesktopSettings {
     pub agent_environment: AgentEnvironment,
     #[serde(default)]
     pub wsl_distro: Option<String>,
+    #[serde(default)]
+    pub network_proxy: NetworkProxySettings,
 }
 
 /// Path of `desktop-settings.json` beside `boot.log`.
@@ -79,6 +82,7 @@ pub fn effective_agent_environment(settings: &DesktopSettings) -> AgentEnvironme
 #[cfg(test)]
 mod tests {
     use super::{load_from, save_to, AgentEnvironment, CloseAction, DesktopSettings};
+    use crate::network_proxy::{NetworkProxyMode, NetworkProxySettings};
     use std::fs;
     use std::path::PathBuf;
 
@@ -111,6 +115,10 @@ mod tests {
             AgentEnvironment::Windows
         );
         assert_eq!(load_from(&path).wsl_distro, None);
+        assert_eq!(
+            load_from(&path).network_proxy,
+            NetworkProxySettings::default()
+        );
     }
 
     #[test]
@@ -122,6 +130,7 @@ mod tests {
                 close_action: None,
                 agent_environment: AgentEnvironment::Wsl,
                 wsl_distro: Some("Ubuntu".into()),
+                network_proxy: NetworkProxySettings::default(),
             },
         )
         .unwrap();
@@ -166,6 +175,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(load_from(&path).close_action, None);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn persists_application_network_proxy_preferences() {
+        let path = temp_file();
+        let settings = NetworkProxySettings {
+            mode: NetworkProxyMode::Custom,
+            http_proxy: "http://127.0.0.1:7890".into(),
+            https_proxy: "http://127.0.0.1:7890".into(),
+            no_proxy: "*.local".into(),
+        };
+        save_to(
+            &path,
+            &DesktopSettings {
+                network_proxy: settings.clone(),
+                ..DesktopSettings::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(load_from(&path).network_proxy, settings);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("networkProxy"));
+        assert!(!raw.contains("password"));
         let _ = fs::remove_file(&path);
     }
 }
