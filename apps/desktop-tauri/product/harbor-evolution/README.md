@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Installable DeepSeek Harness Plugin + Skill for running stable Harbor evaluation and controlled Agent evolution loops, with a native DSH Web dashboard.
 
-The package gives DSH fourteen strict Harbor tools, dedicated Tool cards, a nine-stage Evaluation Workbench, an installation Doctor, and the model- and user-invocable `evolve-agent-with-harbor` Skill. The Skill starts with four user-facing concepts—Dataset (what to test), Generator (who answers), Evaluator plus criteria (what good means), and Optimizer (who improves it)—then compiles accepted choices into the strict Evaluation Stack. A DSH Generator may explicitly pin the current default model as a non-secret Candidate identity while retaining the per-Job Host Broker credential boundary. The Plugin validates Dataset identity, checks Trial Lifecycle and Score Validity, governs independent Ground Truth meta-evaluation, diagnoses evidence provenance, limits each iteration to one controlled Candidate change, and invokes the Promotion Gate only as an explicit action.
+The package gives DSH sixteen strict Harbor tools, dedicated Tool cards, a nine-stage Evaluation Workbench, an installation Doctor, and the model- and user-invocable `evolve-agent-with-harbor` Skill. The Skill starts with four user-facing concepts—Dataset (what to test), Generator (who answers), Evaluator plus criteria (what good means), and Optimizer (who improves it)—then compiles accepted choices into the strict Evaluation Stack. When no Dataset is supplied, it can instead preview recent completed DSH Sessions and evaluate each immutable Session as one Historical Trial without rerunning a Candidate. A DSH Generator may explicitly pin the current default model as a non-secret Candidate identity while retaining the per-Job Host Broker credential boundary. The Plugin validates Dataset identity, checks Trial Lifecycle and Score Validity, governs independent Ground Truth meta-evaluation, diagnoses evidence provenance, limits each iteration to one controlled Candidate change, and invokes the Promotion Gate only as an explicit action.
 
 ## Install
 
@@ -16,10 +16,12 @@ npx --yes dsh-harbor-evolution@latest setup --project-root "$PWD"
 
 The setup command installs both required runtimes:
 
-- `harbor-dsh-evolution==0.7.3` in a managed Python environment.
-- `dsh-harbor-evolution@0.7.3` in the selected DSH profile.
+- `harbor-dsh-evolution==0.8.1` in a managed Python environment.
+- `dsh-harbor-evolution@0.8.1` in the selected DSH profile.
 
 It then stores the absolute Harbor executable paths and a fallback `projectRoot` in the profile's `harbor-evolution` block and verifies the integration. Agent Tool calls always use the calling session's absolute working directory as their project root; the configured value remains the Web Workbench and non-Agent fallback. Existing unrelated profile entries are preserved, and rerunning setup updates the same block.
+
+Successful setup requires `harbor plugins list` to discover both `dsh-evolution` for Candidate Jobs and `dsh-historical-evaluation` for observe-existing Session Jobs.
 
 The default profile is `web`. Use `--profile headless` only when that is the profile you actually run. See all options with:
 
@@ -42,10 +44,17 @@ The Plugin registers:
 - `harbor_model_binding`
 - `harbor_evolution_init`
 - `harbor_evolution_doctor`
+- `harbor_quick_diagnostic_init`
+- `harbor_session_diagnostic_preview`
+- `harbor_session_diagnostic_run`
 - `harbor_dataset_validate`
 - `harbor_context_preview`
 - `harbor_eval_run`
 - `harbor_eval_result`
+- `harbor_evaluator_inspect`
+- `harbor_evaluator_update`
+- `harbor_ground_truth_init`
+- `harbor_evaluator_meta_evaluate`
 - `harbor_candidate_compare`
 
 In the `web` profile, the same package also registers:
@@ -59,6 +68,14 @@ In the `web` profile, the same package also registers:
 The Web UI is intentionally read-only. Starting an evaluation or deciding promotion remains an explicit Agent + Skill workflow, so a page refresh can never launch an expensive Job.
 
 A direct evaluation requires `candidatePath`, `datasetPath`, `stackPath`, and explicit `mode`; `promotion-eligible` additionally requires `policyPath`. Prefer the Skill because it will not run or compare Jobs until the material identities and evaluation contract are resolved.
+
+## Historical Session cold start
+
+When the user does not provide a Dataset, the Skill first calls `harbor_session_diagnostic_preview` for up to ten recent completed business Sessions from the Agent's exact working directory. Preview returns only safe metadata and a short-lived confirmation token. Its confirmation card identifies the Evaluator and Judge, discloses same-model coupling and estimated requests, and warns that redacted evidence will remain under `.harbor/private` and `jobs`; it never exposes raw Session ids or transcripts.
+
+After explicit confirmation, `harbor_session_diagnostic_run` receives only the `selectionToken` and an optional Job name. It revalidates the frozen Session and Feedback digests, materializes an immutable Historical Batch plus matching Dataset and Stack, and evaluates one Session Observation per Harbor Trial. The Job does not rerun a Candidate, cannot enter Promotion Gate, and records Evaluator Meta-Evaluation as `not-run` because evaluator reliability requires a separate independent Ground Truth workflow.
+
+A Historical Trial may finish as `completed-unscored` when required evidence is insufficient. That is a normal Evaluator abstention, not a zero score or infrastructure failure; use Trial and Criterion coverage to interpret the result.
 
 ## Candidate model binding
 

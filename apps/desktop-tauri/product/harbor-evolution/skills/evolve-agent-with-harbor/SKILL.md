@@ -1,6 +1,6 @@
 ---
 name: evolve-agent-with-harbor
-description: Architect, initialize, run, diagnose, compare, and safely improve a DeepSeek Harness business Agent or Evaluator with Harbor. Use for low-friction Harbor setup, Agent self-evolution, vertical-search evaluation loops, running Job inspection, failed Trial diagnosis, Candidate optimization, evaluator governance, turning reviewed reports and natural-language scoring feedback into evaluator meta-evaluation data, or explicit promotion decisions.
+description: Architect, initialize, run, diagnose, compare, and safely improve a DeepSeek Harness business Agent or Evaluator with Harbor. Use for low-friction Harbor setup, evaluating recent completed DSH Sessions when no Dataset is supplied, Agent self-evolution, vertical-search evaluation loops, running Job inspection, failed Trial diagnosis, Candidate optimization, evaluator governance, turning reviewed reports and natural-language scoring feedback into evaluator meta-evaluation data, or explicit promotion decisions.
 ---
 
 # Evolve Agent With Harbor
@@ -32,6 +32,7 @@ The runtime must remain `dsh-host-broker` / `dsh-host-model-gateway/v1`: the Can
 - **Architecture**: inspect role boundaries and run `harbor_evolution_doctor`.
 - **Initialize**: read `references/initialization.md`, compile the accepted four-concept card, then call `harbor_evolution_init`.
 - **Diagnostic**: investigate failures without making a promotion claim.
+- **Historical generation diagnostic**: when no Dataset was supplied, preview recent completed DSH Sessions and, only after confirmation, evaluate the immutable records without re-executing a Candidate.
 - **Quick diagnostic**: after confirmation, call `harbor_quick_diagnostic_init` for one Query plus a Rubric draft. It generates a Harbor 1.4 wiring project that reuses the current DSH model and is permanently marked non-promotable.
 - **Promotion**: run a `promotion-eligible` Job and apply the deterministic Gate.
 - **Evolve**: baseline → diagnose → one controlled change → regression Job → Gate.
@@ -39,6 +40,44 @@ The runtime must remain `dsh-host-broker` / `dsh-host-model-gateway/v1`: the Can
 - **Govern**: inspect Evaluator/Rubric/Judge source and identities; preview whether a change requires a fresh baseline.
 
 Do not turn an inspection or diagnostic request into Agent mutation or deployment.
+
+## Default to recent Sessions only when Dataset is absent
+
+Preserve explicit user input. If the user supplies any Dataset, Query, instruction file/directory, Dataset path, or Dataset-bearing curl workflow, use the normal four-concept flow below. Never replace or augment an explicit Dataset with Session history unless the user separately asks for that change.
+
+Only when no Dataset was supplied and `harbor_session_diagnostic_preview` is available:
+
+1. Call `harbor_session_diagnostic_preview` with `limit=10`. This is a read-only Preview, not a Job. If the user selected a different Judge, pass its provider/model/reasoning options here so that identity is part of the confirmation token.
+2. Present the returned safe Session metadata, exact-cwd scope, last-activity order, excluded counts, warnings, estimated Judge requests, token expiry, and confirmation text. Do not expose or reconstruct raw Session ids, transcripts, tool payloads, or credentials.
+3. Explain the role mapping plainly: the DSH Agent that produced each Session remains the **Generator**; the completed Session is immutable Generation Record evidence; one Historical Generation Evaluation Job contains up to 10 Trials; one selected Session becomes one Trial.
+4. Ask for explicit confirmation. Do not call the run tool merely because Preview succeeded. If the sample changed or the token expired, preview again instead of widening scope.
+5. After confirmation, call `harbor_session_diagnostic_run` with the returned `selectionToken` (and only an optional `jobName`). Evaluator/Judge overrides belong to Preview and are rejected at Run so the confirmed identity cannot change. The tool synchronously materializes the private Batch into its matching Dataset and immutable Historical Evaluation Stack before starting the Job. Do not pass `stackPath`: the MVP rejects custom Historical Stacks so the executed Evaluator cannot drift from the declared Stack. Do not call `harbor_candidate_snapshot`, `harbor_model_binding`, `harbor_context_preview`, or `harbor_eval_run` for this branch.
+
+Render this compact confirmation card before running:
+
+```text
+会话历史评测确认
+- 范围：当前工作目录，按最后活动时间选取最近 <N>/10 条已完成会话
+- 生成器：产生这些会话的 DSH Agent（本次不会重新执行）
+- 评测对象：<N> 条已有 Generation Records；1 条会话 = 1 Trial
+- 评测器：<evaluation.evaluator.id>@<version> · Judge <evaluation.judge.provider>/<model>
+- 评测耦合：<evaluation.coupling；同模型或 Generator 模型未知时明确仅用于诊断，不声称独立>
+- 成本上界：<estimatedJudgeRequests> 次 Judge 请求
+- 用途：诊断、群体分析与生成器问题定位
+- 本地保留：`.harbor/private` 和 `jobs` 会保存脱敏后的真实业务会话证据，默认不会自动删除
+- VCS 风险：private 根不存在规则时会创建 ignore-all `.gitignore`，但不会覆盖已有规则；`jobs` 的忽略、上传与保留策略仍由项目负责
+- 不会执行：Candidate 生成、本 Historical Job 内的评测器元评测、Promotion Gate 或部署
+```
+
+Treat the resulting `historical-generation-evaluation` Job as `diagnostic` and `observe-existing`. `completed-unscored` is a normal abstention when evidence is insufficient; report scored/unscored Trial and Criterion coverage separately, and never convert abstention into business score `0`.
+
+Population Analysis and Generator Diagnosis summarize the observed records and Generator population. They are not Evaluator Meta-Evaluation. The existing independent-GT flow (`harbor_ground_truth_init` plus repeated evaluator observations and `harbor_evaluator_meta_evaluate`) remains available as a separate governance action, but this Historical Job never invokes or inherits it automatically. For the Historical Job report `evaluator_meta_evaluation.status=not-run`, say that its Evaluator reliability remains unvalidated, and never claim ESF/SCE/RCR evidence from Session scores. A future dedicated `evaluator-meta-evaluation` Job may package that existing flow into a Job lifecycle; do not describe the underlying meta-evaluation capability as absent.
+
+Historical Generation Jobs are never comparable Candidate baselines or Promotion Gate inputs. Report Gate as `N/A`; if comparison is requested, explain `UNSUPPORTED_JOB_KIND_FOR_PROMOTION` and first convert reviewed badcases into a fixed regression Dataset.
+
+If the Session Query capability or Preview tool is unavailable, state that limitation and continue with the ordinary four-concept intake. Do not invent a filesystem transcript scan as a fallback.
+
+State current MVP limits instead of suggesting unsupported controls: selection is exact-cwd, reads at most the configured `sessionMaxReads` candidates (100 by default), accepts an optional ISO-8601 `createdAfter` lower bound, and exposes no cursor. On `SESSION_SELECTION_TOO_EXPENSIVE`, preview again with a narrower `createdAfter`, use an explicit Query/Dataset, or ask an administrator to review the read limit. A token binds Feedback availability, failure state, and content digest without retaining raw Feedback; if any of them changes, Run fails before writing the Batch and requires a new Preview. Do not claim that a real Docker/Harbor/Workbench journey passed from unit tests, generated files, or a zero process exit code alone.
 
 ## Start with four clear concepts
 
@@ -93,7 +132,7 @@ Never invent GT labels, business thresholds, credentials, production side-effect
 
 ## Enforce the strict architecture
 
-Require these before every Job:
+Require these before every Candidate execution Job:
 
 - `candidate-manifest.json` verified against the Candidate files.
 - `dataset-manifest.json` with unique task ids, non-empty instructions, safe paths, a matching source digest, and the same Task population that Harbor resolves at runtime. A local Dataset contains immediate Task child directories; each Task uses `schema_version = "1.4"`, `[task].name = "org/name"`, `instruction.md`, `environment/`, and `tests/test.sh`.
@@ -102,14 +141,14 @@ Require these before every Job:
 
 Require `input_integrity`, `agent_completed`, `integration_valid`, `renderer_valid`, `judge_completed`, and `artifact_schema_valid` in the Trial validity contract. Specify which failures are hard requirements. Never infer that a numeric raw verifier reward is a valid Candidate quality score.
 
-Before a formal Job, call in order:
+Before a formal Candidate execution Job, call in order:
 
 1. `harbor_candidate_snapshot`
 2. `harbor_dataset_validate`
 3. `harbor_evolution_doctor`
 4. `harbor_context_preview`
 
-Do not launch a `promotion-eligible` Job when Doctor reports an error, no comparable baseline exists, or `fresh_baseline_required` is true. A diagnostic Job may investigate architecture warnings, but still requires a valid Candidate, Dataset Manifest, Evaluation Stack, and Context v2.
+Do not launch a `promotion-eligible` Job when Doctor reports an error, no comparable baseline exists, or `fresh_baseline_required` is true. A Candidate-execution diagnostic Job may investigate architecture warnings, but still requires a valid Candidate, Dataset Manifest, Evaluation Stack, and Context v2. The observe-existing Session branch instead uses its frozen Historical Generation Batch, Historical Evaluation Context, and non-promotion Stack.
 
 Keep Runner orchestration-only. Treat these as architecture errors:
 
@@ -176,6 +215,7 @@ Use the formal terminal states precisely:
 - `candidate-quality-failed`: valid execution reached evaluation, but a Candidate-owned hard requirement failed.
 - `infrastructure-error`: dependency, sandbox, permission, transport, timeout, or runtime failure; no Candidate quality score.
 - `evaluation-error`: Renderer/Judge/Verifier did not complete; no Candidate quality score.
+- `completed-unscored`: a Historical Generation Trial completed but the Evaluator abstained for insufficient evidence; preserve it in coverage and do not count it as a quality failure or score `0`.
 - `cancelled`: preserve the attempt and do not score it.
 
 For retry or resume, retain the old attempt and create a new attempt. Never replace an assessment or event history in place.
@@ -221,7 +261,7 @@ Call `harbor_context_preview`; establish a fresh baseline if needed. Run the Can
 
 Never bypass `INFRASTRUCTURE_EXCEPTION_PRESENT`, `ARTIFACT_SCHEMA_INVALID`, Dataset/Stack/Rubric/Judge mismatch, or non-regression failures.
 
-A `diagnostic` Job must never invoke Gate. Reading the Workbench, generating a Reporter summary, or producing a non-reward Optimization Report also must not promote, deploy, publish, or replace the Champion. Gate remains a separate, explicit comparison action.
+A `diagnostic` Job must never invoke Gate. A Historical Generation Job always displays Gate as `N/A` and must not be passed to `harbor_candidate_compare`. Reading the Workbench, generating a Reporter summary, or producing a non-reward Optimization Report also must not promote, deploy, publish, or replace the Champion. Gate remains a separate, explicit Candidate comparison action.
 
 ## Govern evaluator changes
 
@@ -288,7 +328,7 @@ Treat one reviewed report as a diagnostic calibration example, not evidence that
 
 After cases are populated, run the same Evaluator repeatedly on the fixed reports, collect `evaluator-observations/v1`, and call `harbor_evaluator_meta_evaluate`. The user should not have to hand-author either JSON file. Report ESF, SCE, RCR, coverage, disagreement slices, latency, and cost as applicable, then translate them back into direct conclusions: missed problems, false alarms, unstable judgments, and the smallest justified Evaluator/Rubric change.
 
-Manage evaluator Candidates and meta-evaluation Jobs with the same Manifest, Context v2, Doctor, evidence, and Gate rules.
+Manage Evaluator Candidates and the existing independent-GT meta-evaluation artifacts with immutable identities, provenance, comparable observations, and an explicit human adoption decision. A dedicated `evaluator-meta-evaluation` Harbor Job lifecycle is future work; do not claim that `harbor_evaluator_meta_evaluate` created such a Job.
 
 ## Report each cycle
 
@@ -303,5 +343,5 @@ Return:
 - One Dataset-level overall conclusion and one prioritized, evidence-linked optimization recommendation; explicitly state when score validity or coverage is insufficient for one.
 - Evidence provenance and any capability unavailable on a legacy Job.
 - Controlled change hypothesis and mutation surface.
-- Gate decision with exact reason codes.
+- Gate decision with exact reason codes for Candidate comparison Jobs, or explicit `N/A` for Historical Generation Jobs.
 - External CI/CD action still required.

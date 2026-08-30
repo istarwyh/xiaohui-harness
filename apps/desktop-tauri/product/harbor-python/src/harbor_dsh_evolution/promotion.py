@@ -27,6 +27,49 @@ def evaluate_promotion(
     candidate: dict[str, Any],
     policy: dict[str, Any],
 ) -> dict[str, Any]:
+    historical = any(
+        summary.get("job_kind") == "historical-generation-evaluation"
+        or (summary.get("evaluation_context") or {}).get("protocol")
+        == "historical-generation-evaluation-context/v1"
+        for summary in (baseline, candidate)
+    )
+    if historical:
+        return {
+            "schema_version": 2,
+            "decision": "REJECT",
+            "baseline_job": baseline.get("job"),
+            "candidate_job": candidate.get("job"),
+            "baseline_candidate": baseline.get("candidate") or {},
+            "candidate": candidate.get("candidate") or {},
+            "policy": {
+                "policy_id": policy.get("policy_id"),
+                "version": policy.get("version"),
+            },
+            "policy_digest": canonical_digest(
+                policy, namespace="harbor-dsh-promotion-policy-v2"
+            ),
+            "baseline_metrics": baseline.get("metrics") or {},
+            "candidate_metrics": candidate.get("metrics") or {},
+            "metric_deltas": {},
+            "population": {
+                "baseline": baseline.get("n_trials", 0),
+                "candidate": candidate.get("n_trials", 0),
+                "baseline_valid": baseline.get("n_valid_scores"),
+                "candidate_valid": candidate.get("n_valid_scores"),
+            },
+            "improved_trials": [],
+            "regressed_trials": [],
+            "new_exceptions": [],
+            "artifact_regressions": [],
+            "comparable": False,
+            "gate_eligible": False,
+            "reasons": [
+                {
+                    "code": "UNSUPPORTED_JOB_KIND_FOR_PROMOTION",
+                    "message": "Historical Generation Evaluation is diagnostic-only and cannot enter a Candidate Promotion Gate.",
+                }
+            ],
+        }
     reasons: list[dict[str, str]] = []
 
     def reject(code: str, message: str) -> None:

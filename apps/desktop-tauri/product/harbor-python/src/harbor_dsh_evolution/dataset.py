@@ -103,6 +103,9 @@ def snapshot_dataset(
     *,
     dataset_id: str | None = None,
     version: str = "1.0.0",
+    dataset_kind: str | None = None,
+    source_kind: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     dataset_dir = dataset_dir.expanduser().resolve(strict=True)
     digest, files = compute_dataset_digest(dataset_dir)
@@ -122,6 +125,9 @@ def snapshot_dataset(
         "task_count": len(tasks),
         "tasks": tasks,
         "file_count": len(files),
+        **({"dataset_kind": dataset_kind} if dataset_kind else {}),
+        **({"source_kind": source_kind} if source_kind else {}),
+        **({"metadata": metadata} if metadata else {}),
     }
     (dataset_dir / MANIFEST_NAME).write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
@@ -156,6 +162,20 @@ def validate_dataset(dataset_dir: Path, *, project_root: Path | None = None) -> 
     for key in ("dataset_id", "version", "source_digest"):
         if not isinstance(manifest.get(key), str) or not manifest[key].strip():
             error("DATASET_IDENTITY_INVALID", f"Dataset manifest requires non-empty {key}")
+    dataset_kind = manifest.get("dataset_kind")
+    if dataset_kind is not None and dataset_kind not in {
+        "candidate-execution",
+        "historical-generation",
+    }:
+        error("DATASET_KIND_INVALID", "dataset_kind is not supported")
+    source_kind = manifest.get("source_kind")
+    if dataset_kind == "historical-generation" and (
+        not isinstance(source_kind, str) or not source_kind.strip()
+    ):
+        error(
+            "DATASET_SOURCE_KIND_MISSING",
+            "Historical Generation datasets require source_kind",
+        )
     tasks = manifest.get("tasks")
     if not isinstance(tasks, list) or not tasks:
         error("DATASET_TASKS_MISSING", "Dataset manifest requires at least one task")
@@ -196,7 +216,7 @@ def validate_dataset(dataset_dir: Path, *, project_root: Path | None = None) -> 
         query = task.get("query")
         if isinstance(query, str) and query.strip():
             normalized = " ".join(query.split()).casefold()
-            if normalized in queries:
+            if normalized in queries and dataset_kind != "historical-generation":
                 error("DATASET_QUERY_DUPLICATE", f"Duplicate query in task: {task_id}")
             queries.add(normalized)
         for key in ("path", "instruction", "verifier", "environment"):

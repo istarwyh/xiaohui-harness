@@ -15,13 +15,16 @@ ACTIVE_PHASES = (
     "queued",
     "preparing-environment",
     "preparing-agent",
+    "loading-observation",
     "running-agent",
+    "running-adapter",
     "running-integration",
     "rendering",
     "evaluating",
 )
 TERMINAL_PHASES = (
     "completed",
+    "completed-unscored",
     "candidate-quality-failed",
     "infrastructure-error",
     "evaluation-error",
@@ -73,9 +76,17 @@ def _event_aliases(task_name: str) -> set[str]:
 class TrialLifecycleStore:
     """Append-only Trial events plus one small, atomic current-state snapshot."""
 
-    def __init__(self, job_dir: Path, *, job: str, tasks: list[dict[str, Any]]):
+    def __init__(
+        self,
+        job_dir: Path,
+        *,
+        job: str,
+        tasks: list[dict[str, Any]],
+        job_kind: str = "candidate-evaluation",
+    ):
         self.job_dir = job_dir
         self.job = job
+        self.job_kind = job_kind
         self.events_path = job_dir / EVENTS_NAME
         self.snapshot_path = job_dir / LIFECYCLE_NAME
         self._lock = Lock()
@@ -170,15 +181,44 @@ class TrialLifecycleStore:
             self._append_event(record, timestamp=timestamp)
             self._write_snapshot()
 
-    def finalize_score(self, execution_id: str, *, phase: str, score: dict[str, Any]) -> None:
+    def finalize_score(
+        self,
+        execution_id: str,
+        *,
+        phase: str,
+        score: dict[str, Any],
+        task_name: str | None = None,
+        trial_name: str | None = None,
+    ) -> None:
         with self._lock:
             record = next(
                 (item for item in self._records if item.get("execution_id") == execution_id),
                 None,
             )
+            if record is None and task_name:
+                aliases = _event_aliases(task_name)
+                record = next(
+                    (
+                        item
+                        for item in self._records
+                        if not item.get("execution_id")
+                        and aliases.intersection(item.get("_task_aliases", ()) or ())
+                    ),
+                    None,
+                )
             if record is None:
                 return
-            record.update({"phase": phase, "terminal": True, "score": score, "updated_at": _iso()})
+            record.update(
+                {
+                    "execution_id": execution_id,
+                    "trial_name": trial_name or record.get("trial_name"),
+                    "phase": phase,
+                    "terminal": True,
+                    "score": score,
+                    "started_at": record.get("started_at") or _iso(),
+                    "updated_at": _iso(),
+                }
+            )
             self._append_event(record, timestamp=record["updated_at"])
             self._write_snapshot()
 
@@ -186,6 +226,7 @@ class TrialLifecycleStore:
         event = {
             "schema_version": 1,
             "job": self.job,
+            "job_kind": self.job_kind,
             "trial": record["trial"],
             "execution_id": record.get("execution_id"),
             "trial_name": record.get("trial_name"),
@@ -214,6 +255,7 @@ class TrialLifecycleStore:
             {
                 "schema_version": 1,
                 "job": self.job,
+                "job_kind": self.job_kind,
                 "updated_at": max((item["updated_at"] for item in selected), default=_iso()),
                 "dataset_total": len({item["dataset_order"] for item in selected}),
                 "attempt_count": len(selected),

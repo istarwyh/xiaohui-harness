@@ -74,13 +74,17 @@ export class CandidateModelRuntime {
     this.config = config
   }
 
-  async currentBinding() {
+  async resolveCurrent() {
     const inherited = this.ctx.agentDefaultModel.currentSelection()
-    const binding = await this.resolve({
+    return this.resolve({
       candidateProvider: inherited.provider,
       candidateModel: inherited.model,
       candidateReasoningEffort: inherited.reasoningEffort,
-    })
+    }, undefined, { ignoreConfigured: true })
+  }
+
+  async currentBinding() {
+    const binding = await this.resolveCurrent()
     return {
       schema_version: 1,
       source: 'skill-agent-default',
@@ -92,14 +96,14 @@ export class CandidateModelRuntime {
     }
   }
 
-  async resolve(args = {}, pinnedBinding) {
+  async resolve(args = {}, pinnedBinding, { ignoreConfigured = false } = {}) {
     const explicitProvider = nonBlank(args.candidateProvider)
     const explicitModel = nonBlank(args.candidateModel)
     if (Boolean(explicitProvider) !== Boolean(explicitModel)) {
       throw new Error('candidateProvider and candidateModel must be supplied together')
     }
-    const configuredProvider = nonBlank(this.config.candidateProvider)
-    const configuredModel = nonBlank(this.config.candidateModel)
+    const configuredProvider = ignoreConfigured ? undefined : nonBlank(this.config.candidateProvider)
+    const configuredModel = ignoreConfigured ? undefined : nonBlank(this.config.candidateModel)
     if (Boolean(configuredProvider) !== Boolean(configuredModel)) {
       throw new Error('Harbor candidateProvider and candidateModel configuration must be supplied together')
     }
@@ -129,7 +133,7 @@ export class CandidateModelRuntime {
     const provider = pinnedProvider ?? explicitProvider ?? configuredProvider ?? inherited.provider
     const model = pinnedModel ?? explicitModel ?? configuredModel ?? inherited.model
     const explicitReasoning = nonBlank(args.candidateReasoningEffort)
-    const configuredReasoning = nonBlank(this.config.candidateReasoningEffort)
+    const configuredReasoning = ignoreConfigured ? undefined : nonBlank(this.config.candidateReasoningEffort)
     const canInheritReasoning = provider === inherited.provider && model === inherited.model
     const reasoningEffort = pinnedProvider
       ? pinnedReasoning

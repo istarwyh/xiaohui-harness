@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/istarwyh/harbor-self-evolving/schemas/historical-evaluation-summary.schema.json",
+  "title": "Historical Generation Evaluation Summary v4",
+  "type": "object",
+  "required": ["schema_version", "job", "job_kind", "mode", "execution_mode", "evaluation_target", "generation_source", "evaluation_context", "n_trials", "n_discovered_trials", "n_completed_trials", "n_valid_scores", "n_invalid_scores", "n_unscored_trials", "status_counts", "coverage", "criterion_status_counts", "metrics", "trials", "artifact_validation", "evaluator_meta_evaluation"],
+  "properties": {
+    "schema_version": { "const": 4 },
+    "job": { "type": "string", "minLength": 1 },
+    "job_kind": { "const": "historical-generation-evaluation" },
+    "mode": { "const": "diagnostic" },
+    "execution_mode": { "const": "observe-existing" },
+    "evaluation_target": { "type": "object", "required": ["kind", "source_kind", "batch_id", "digest", "record_count"] },
+    "generation_source": { "type": "object", "required": ["kind"] },
+    "evaluation_context": { "type": "object" },
+    "n_trials": { "type": "integer", "minimum": 1, "maximum": 10 },
+    "n_discovered_trials": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "n_completed_trials": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "n_valid_scores": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "n_invalid_scores": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "n_unscored_trials": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "status_counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scored_trials", "unscored_trials", "total_trials", "trial_rate", "criterion_scored", "criterion_total", "criterion_rate"],
+      "properties": {
+        "scored_trials": { "type": "integer", "minimum": 0 },
+        "unscored_trials": { "type": "integer", "minimum": 0 },
+        "total_trials": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "trial_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "criterion_scored": { "type": "integer", "minimum": 0 },
+        "criterion_total": { "type": "integer", "minimum": 0 },
+        "criterion_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "criterion_status_counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+    "metrics": { "type": "object", "additionalProperties": { "type": "number" } },
+    "trials": { "type": "array", "maxItems": 10, "items": { "type": "object" } },
+    "artifact_validation": { "type": "object" },
+    "evaluator_meta_evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "validation_report_ref"],
+      "properties": { "status": { "const": "not-run" }, "validation_report_ref": { "type": "null" } }
+    }
+  },
+  "not": { "required": ["candidate"] }
+}

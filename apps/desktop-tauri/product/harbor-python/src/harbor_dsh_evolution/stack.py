@@ -32,12 +32,22 @@ REQUIRED_ROLES = (
 )
 COMPARABILITY_ROLES = ("integration", "renderer", "evaluator", "rubric")
 VALIDITY_REQUIREMENTS = {
-    "input_integrity",
-    "agent_completed",
-    "integration_valid",
-    "renderer_valid",
-    "judge_completed",
-    "artifact_schema_valid",
+    "candidate-evaluation": {
+        "input_integrity",
+        "agent_completed",
+        "integration_valid",
+        "renderer_valid",
+        "judge_completed",
+        "artifact_schema_valid",
+    },
+    "historical-generation-evaluation": {
+        "input_integrity",
+        "observation_integrity",
+        "adapter_completed",
+        "renderer_valid",
+        "judge_completed",
+        "artifact_schema_valid",
+    },
 }
 
 
@@ -49,7 +59,12 @@ def load_stack(path: Path) -> dict[str, Any]:
     return value
 
 
-def validate_stack(path: Path, *, project_root: Path) -> dict[str, Any]:
+def validate_stack(
+    path: Path,
+    *,
+    project_root: Path,
+    job_kind: str = "candidate-evaluation",
+) -> dict[str, Any]:
     project_root = project_root.expanduser().resolve(strict=True)
     path = resolve_inside(project_root, path, label="stack")
     stack = load_stack(path)
@@ -57,6 +72,15 @@ def validate_stack(path: Path, *, project_root: Path) -> dict[str, Any]:
 
     def error(code: str, message: str) -> None:
         findings.append({"level": "error", "code": code, "message": message})
+
+    if job_kind not in VALIDITY_REQUIREMENTS:
+        raise ValueError(f"Unsupported Evaluation Stack job kind: {job_kind}")
+    declared_job_kind = stack.get("job_kind", "candidate-evaluation")
+    if declared_job_kind != job_kind:
+        error(
+            "STACK_JOB_KIND_MISMATCH",
+            f"Evaluation Stack declares {declared_job_kind}, expected {job_kind}",
+        )
 
     if stack.get("schema_version") != 1:
         error("STACK_SCHEMA_UNSUPPORTED", "Evaluation Stack must use schema_version 1")
@@ -132,6 +156,13 @@ def validate_stack(path: Path, *, project_root: Path) -> dict[str, Any]:
         if not isinstance(metrics, list) or not metrics:
             error("EVALUATION_CONTRACT_INVALID", "evaluation_contract requires metrics")
         evaluator_interface = (normalized.get("evaluator") or {}).get("interface") or {}
+        if job_kind == "historical-generation-evaluation" and evaluator_interface.get(
+            "interface"
+        ) != "harbor-dsh-evaluator/v2":
+            error(
+                "HISTORICAL_EVALUATOR_V2_REQUIRED",
+                "Historical Generation Evaluation requires harbor-dsh-evaluator/v2",
+            )
         evaluator_criteria = {str(item.get("id")) for item in evaluator_interface.get("criteria") or []}
         aggregate_metric = ((evaluator_interface.get("aggregate") or {}).get("metric_id"))
         contract_metrics = {
@@ -149,7 +180,7 @@ def validate_stack(path: Path, *, project_root: Path) -> dict[str, Any]:
             for item in evaluation_contract.get("hard_requirements") or []
             if isinstance(item, dict) and (item.get("id") or item.get("requirement"))
         }
-        missing_validity = sorted(VALIDITY_REQUIREMENTS - requirement_ids)
+        missing_validity = sorted(VALIDITY_REQUIREMENTS[job_kind] - requirement_ids)
         if missing_validity:
             error(
                 "EVALUATION_VALIDITY_REQUIREMENTS_MISSING",
@@ -162,7 +193,16 @@ def validate_stack(path: Path, *, project_root: Path) -> dict[str, Any]:
         error("STACK_SECRET_FIELD", "Evaluation Stack must not contain secret-bearing fields")
 
     valid = not any(item["level"] == "error" for item in findings)
-    return {"valid": valid, "stack": stack, "components": normalized, "judge": judge, "evaluation_contract": evaluation_contract, "findings": findings, "path": public_relative(project_root, path)}
+    return {
+        "valid": valid,
+        "job_kind": job_kind,
+        "stack": stack,
+        "components": normalized,
+        "judge": judge,
+        "evaluation_contract": evaluation_contract,
+        "findings": findings,
+        "path": public_relative(project_root, path),
+    }
 
 
 def _walk_keys(value: Any):
@@ -175,8 +215,13 @@ def _walk_keys(value: Any):
             yield from _walk_keys(item)
 
 
-def snapshot_stack(path: Path, *, project_root: Path) -> dict[str, Any]:
-    result = validate_stack(path, project_root=project_root)
+def snapshot_stack(
+    path: Path,
+    *,
+    project_root: Path,
+    job_kind: str = "candidate-evaluation",
+) -> dict[str, Any]:
+    result = validate_stack(path, project_root=project_root, job_kind=job_kind)
     if not result["valid"]:
         codes = ", ".join(item["code"] for item in result["findings"])
         raise ValueError(f"Evaluation Stack validation failed: {codes}")
@@ -193,6 +238,7 @@ def snapshot_stack(path: Path, *, project_root: Path) -> dict[str, Any]:
     }
     manifest = {
         "schema_version": 1,
+        "job_kind": job_kind,
         "stack_id": stack["stack_id"],
         "version": stack["version"],
         "created_at": datetime.now(timezone.utc).isoformat(),

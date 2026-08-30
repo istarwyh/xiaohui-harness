@@ -281,9 +281,7 @@ export async function setupIntegration(raw = {}, dependencies = {}) {
   const patchChanged = await writeProfilePatch(config.patchFile, config)
   const harborVersion = await run(config.harborBin, ['--version'], { timeoutMs: 10_000 })
   const plugins = await run(config.harborBin, ['plugins', 'list'], { timeoutMs: 10_000 })
-  if (!plugins.stdout.includes('dsh-evolution')) {
-    throw new Error('Harbor installed, but its dsh-evolution plugin entry point was not discovered')
-  }
+  verifyHarborPlugins(plugins.stdout)
   await run(config.harborDshBin, ['--help'], { timeoutMs: 10_000 })
 
   return {
@@ -292,6 +290,14 @@ export async function setupIntegration(raw = {}, dependencies = {}) {
     patchChanged,
     harborVersion: harborVersion.stdout.trim() || harborVersion.stderr.trim(),
     warnings,
+  }
+}
+
+export function verifyHarborPlugins(output) {
+  const missing = ['dsh-evolution', 'dsh-historical-evaluation']
+    .filter(name => !String(output).includes(name))
+  if (missing.length) {
+    throw new Error(`Harbor installed, but these plugin entry points were not discovered: ${missing.join(', ')}`)
   }
 }
 

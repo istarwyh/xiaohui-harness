@@ -4,12 +4,14 @@
     {
       "id": 1,
       "prompt": "帮我给当前目录里的业务 Agent 建一个 Harbor 自进化流程，我还没有准备任何评测配置。",
-      "expected_output": "先检查工作区，再用评测集、生成器、评测器（评测标准）和优化器四个业务概念提出少量短问题；不得要求用户枚举 Evaluation Stack 八个角色或版本号。",
+      "expected_output": "先检查工作区；用户未提供显式 Dataset 时，先调用 harbor_session_diagnostic_preview(limit=10) 只读预览当前 cwd 最近完成会话，说明原 DSH Agent 是生成器、1 会话是 1 Trial，展示成本、排除原因、Evaluator/Judge identity 与 coupling 后等待确认，不得直接 run。Judge 选择只允许在 Preview，确认后只传 selectionToken；确认卡还要提示 .harbor/private 与 jobs 会本地保留脱敏业务会话及其 VCS 风险。Batch 同步物化匹配的 Dataset/Stack，MVP 不接受自定义 stackPath。明确无 Candidate 重执行、Historical Job 内元评测 status=not-run、Gate N/A，同时说明已有独立 GT/meta-evaluate 流程仍可单独使用；仅当 Session Preview 不可用时，再用评测集、生成器、评测器（评测标准）和优化器四个业务概念继续普通冷启动。",
       "files": [],
       "assertions": [
-        "The response visibly uses the four concepts Dataset, Generator, Evaluator with criteria, and Optimizer.",
-        "The response does not ask for eight Evaluation Stack roles, Judge version parameters, Contract ids, or Policy ids.",
-        "The response proposes a managed workspace and states that inferred values will be confirmed before files are created."
+        "The response calls the read-only Session Preview with a limit of 10 before proposing any Historical Job run.",
+        "The response maps the original DSH Agent to Generator and each selected completed Session to one immutable Trial.",
+        "The response pauses for explicit confirmation and warns that redacted business Session evidence remains locally under .harbor/private and jobs with VCS risk.",
+        "The response says Run receives the selection token, synchronously materializes the matching Dataset and immutable Stack, and does not accept a custom stackPath.",
+        "The response keeps Evaluator Meta-Evaluation not-run inside the Historical Job while acknowledging the separate independent-GT meta-evaluate flow, and reports Gate as N/A."
       ]
     },
     {
@@ -26,12 +28,13 @@
     {
       "id": 3,
       "prompt": "评测集在 ./evals，生成器调用这个 curl：curl -X POST http://127.0.0.1:9000/run -H 'Authorization: Bearer secret' -d '{\"input\":\"hi\"}'。评测器在 ./judge.py，优化交给 codex。帮我初始化。",
-      "expected_output": "自动解析四个概念并展示确认卡；不回显或持久化 secret；底层身份与适配器由 Skill 推断，不再追问专业字段；未确认前不写文件或运行 Job。",
+      "expected_output": "保留显式 ./evals Dataset，不用会话历史替换或追加它，也不调用 Session Preview。自动解析四个概念并展示确认卡；不回显或持久化 secret；底层身份与适配器由 Skill 推断，不再追问专业字段；未确认前不写文件或运行 Job。",
       "files": [],
       "assertions": [
         "The Authorization credential is redacted and explicitly excluded from persisted configuration.",
         "The response maps the supplied paths and curl into the four-concept confirmation card.",
-        "The response does not run initialization or evaluation before confirmation."
+        "The response does not run initialization or evaluation before confirmation.",
+        "The response keeps the explicit Dataset authoritative and does not invoke the Session-history Preview."
       ]
     },
     {

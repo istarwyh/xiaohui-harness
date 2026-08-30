@@ -8,13 +8,10 @@
   "archiveSha256": "cc301c04d5fd4892092f412eda827b134cf5823e0b80b1426a62ba7e5f665d45",
   "upstreamTreeSha256": "74bbed3b884c1a6910a582831601fd28648c5c76a6bbb835767117757cb63e37",
   "patches": [
-    "Set @deepseek-ai/dsh-llm peer range from ^0.1.0-rc.7 || ^0.1.1-rc.1 to 0.1.1-rc.1.",
-    "Set @deepseek-ai/dsh-settings peer range from ^0.1.0-rc.7 || ^0.1.1-rc.1 to 0.1.1-rc.1.",
-    "Preserve install result package identity and expose actionable pnpm diagnostics.",
-    "Resolve only dsh.bundle.patch packages through Repository or owner-scoped DSH upstream metadata, request latest manifests as standard JSON, and ignore sibling SDK and CLI packages.",
-    "Route repository and npm links through XiaoHui's restricted desktop external-link bridge while preserving the ordinary browser fallback."
+    "Set @deepseek-ai/dsh-llm peer range from 0.1.1-rc.1 to 0.1.1-rc.2.",
+    "Set @deepseek-ai/dsh-settings peer range from 0.1.1-rc.1 to 0.1.1-rc.2."
   ],
   "repository": "https://github.com/Scorp1o117/dsh-plugin-marketplace",
   "license": "MIT",
-  "treeSha256": "ee1c6f6f3a91ba724c22cae3800c10d40974739301f18cc55cbcfe2910205575"
+  "treeSha256": "8146079b29d650f5340238be6e5094dd83f6f69f320ed9fcdfe3adf6956001d4"
 }

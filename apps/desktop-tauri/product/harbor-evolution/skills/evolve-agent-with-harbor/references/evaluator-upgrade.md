@@ -66,6 +66,8 @@ Treat changes to any of these as reward-semantic changes requiring a new Context
 
 ## Meta-evaluate before adopting
 
+The current capability is an independent artifact workflow, not a Harbor Job kind: `harbor_ground_truth_init` creates the provenance-bearing GT draft, repeated Evaluator runs produce fixed observations, and `harbor_evaluator_meta_evaluate` writes `meta-evaluation-report/v1`. It does not run inside a Historical Generation Job, and it does not emit a `job_kind=evaluator-meta-evaluation` Job. A future dedicated Job may package this existing workflow into a recoverable lifecycle.
+
 Rotate roles:
 
 - Candidate: the new Evaluator/Rubric/Judge version.
@@ -76,7 +78,7 @@ Rotate roles:
 
 Use the same GT set, repeat policy, and measurement procedure for old and new evaluator Candidates. Report coverage, invalid measurements, aggregate metrics, disagreement slices, latency, cost, and representative errors. Do not select only favorable runs.
 
-GT is not synonymous with human labeling. It may be human, programmatic, consensus-based, produced by a separately pinned model, or imported from an external standard. Require explicit provenance and independence from the Candidate evaluator in every case. Use `harbor_ground_truth_init` to create the versioned draft and `harbor_evaluator_meta_evaluate` to calculate ESF, SCE, and RCR from repeated observations.
+GT is not synonymous with human labeling. It may be human, programmatic, consensus-based, produced by a separately pinned model, or imported from an external standard. Require explicit provenance and independence from the Candidate evaluator in every case. Use `harbor_ground_truth_init` to create the versioned draft and `harbor_evaluator_meta_evaluate` to calculate ESF, SCE, and RCR from repeated observations. Keep a Historical Job's own `evaluator_meta_evaluation.status=not-run`; never attach a separate report implicitly or derive it from Session Population scores.
 
 The user supplies reports and review evidence; the Agent performs the protocol adaptation. Do not ask the user to hand-author `ground-truth/v1` or `evaluator-observations/v1`. After confirmation, generate the strict files, validate them, run repeated Evaluator observations, and retain a reversible mapping from every normalized field to its raw source.
 

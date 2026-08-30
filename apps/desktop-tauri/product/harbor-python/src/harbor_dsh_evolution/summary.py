@@ -111,10 +111,14 @@ def summarize_payloads(
 
 def summarize_job(job_dir: Path) -> dict[str, Any]:
     job_dir = job_dir.expanduser().resolve(strict=True)
-    candidate_path = job_dir / "candidate-manifest.json"
-    candidate = json.loads(candidate_path.read_text()) if candidate_path.exists() else None
     context_path = job_dir / CONTEXT_NAME
     evaluation_context = json.loads(context_path.read_text()) if context_path.exists() else None
+    if (evaluation_context or {}).get("protocol") == "historical-generation-evaluation-context/v1":
+        from harbor_dsh_evolution.historical_summary import summarize_historical_job
+
+        return summarize_historical_job(job_dir)
+    candidate_path = job_dir / "candidate-manifest.json"
+    candidate = json.loads(candidate_path.read_text()) if candidate_path.exists() else None
     contract_path = job_dir / "evaluation-contract.json"
     evaluation_contract = json.loads(contract_path.read_text()) if contract_path.exists() else None
     dataset_path = job_dir / "dataset-manifest.json"

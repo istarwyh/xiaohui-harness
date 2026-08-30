@@ -11,6 +11,7 @@ from harbor_dsh_evolution.dataset import snapshot_dataset, validate_dataset
 from harbor_dsh_evolution.doctor import architecture_doctor
 from harbor_dsh_evolution.evaluator import inspect_evaluator, update_evaluator_source
 from harbor_dsh_evolution.initialize import initialize_project
+from harbor_dsh_evolution.historical_context import build_historical_context
 from harbor_dsh_evolution.meta_evaluation import (
     initialize_ground_truth,
     load_ground_truth,
@@ -18,6 +19,10 @@ from harbor_dsh_evolution.meta_evaluation import (
 )
 from harbor_dsh_evolution.promotion import compare_jobs, write_report
 from harbor_dsh_evolution.quick import initialize_quick_diagnostic
+from harbor_dsh_evolution.session_batch import (
+    load_generation_batch,
+    materialize_historical_dataset,
+)
 from harbor_dsh_evolution.stack import snapshot_stack, validate_stack, write_stack_manifest
 from harbor_dsh_evolution.summary import load_or_create_summary
 
@@ -123,6 +128,28 @@ def _parser() -> argparse.ArgumentParser:
     meta_evaluate.add_argument("--ground-truth", required=True, type=Path)
     meta_evaluate.add_argument("--observations", required=True, type=Path)
     meta_evaluate.add_argument("--output", default=".harbor/meta-evaluation-report.json", type=Path)
+
+    historical = commands.add_parser(
+        "historical", help="Materialize and validate Historical Generation Evaluation inputs"
+    )
+    historical_commands = historical.add_subparsers(
+        dest="historical_command", required=True
+    )
+    historical_materialize = historical_commands.add_parser("materialize")
+    historical_materialize.add_argument("--project-root", required=True, type=Path)
+    historical_materialize.add_argument("--batch", required=True, type=Path)
+    historical_materialize.add_argument("--output", required=True, type=Path)
+    historical_materialize.add_argument("--judge-provider", required=True)
+    historical_materialize.add_argument("--judge-model", required=True)
+    historical_materialize.add_argument("--judge-reasoning-effort")
+    historical_validate = historical_commands.add_parser("validate")
+    historical_validate.add_argument("--project-root", required=True, type=Path)
+    historical_validate.add_argument("--batch", required=True, type=Path)
+    historical_context = historical_commands.add_parser("context")
+    historical_context.add_argument("--project-root", required=True, type=Path)
+    historical_context.add_argument("--batch", required=True, type=Path)
+    historical_context.add_argument("--dataset", required=True, type=Path)
+    historical_context.add_argument("--stack", required=True, type=Path)
 
     preview = commands.add_parser("context", help="Preview Evaluation Context v2")
     preview_commands = preview.add_subparsers(dest="context_command", required=True)
@@ -250,6 +277,37 @@ def main() -> int:
             observations_path=args.observations,
             output_path=args.output,
         )
+    elif args.command == "historical":
+        if args.historical_command == "materialize":
+            result = materialize_historical_dataset(
+                project_root=args.project_root,
+                batch_path=args.batch,
+                output_path=args.output,
+                judge_provider=args.judge_provider,
+                judge_model=args.judge_model,
+                judge_reasoning_effort=args.judge_reasoning_effort,
+            )
+        elif args.historical_command == "validate":
+            batch = load_generation_batch(
+                args.batch,
+                project_root=args.project_root,
+            )
+            result = {
+                "schema_version": 1,
+                "valid": True,
+                "batch_path": str(batch.path),
+                "batch_id": batch.manifest["batch_id"],
+                "batch_digest": batch.manifest["digest"],
+                "record_count": len(batch.manifest["records"]),
+            }
+        else:
+            result = build_historical_context(
+                project_root=args.project_root,
+                batch_path=args.batch,
+                dataset_path=args.dataset,
+                stack_path=args.stack,
+                mode="diagnostic",
+            )
     elif args.command == "context":
         candidate_dir = args.candidate
         candidate = load_manifest(candidate_dir) if candidate_dir.is_dir() else load_manifest(candidate_dir.parent)

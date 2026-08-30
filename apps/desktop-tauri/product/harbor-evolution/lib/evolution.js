@@ -66,6 +66,73 @@ export function makeJobName(manifest, now = new Date()) {
   return `${identity}-${suffix}`
 }
 
+export function makeHistoricalJobName(batch, now = new Date()) {
+  const timestamp = now.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/[-:]/g, '')
+  const digest = String(batch?.digest ?? '').replace(/^sha256:/, '').slice(0, 8) || 'historical'
+  return `dsh-session-history-${timestamp}-${digest}`
+}
+
+const HISTORICAL_COVERAGE_KEYS = [
+  'scored_trials',
+  'unscored_trials',
+  'total_trials',
+  'trial_rate',
+  'criterion_scored',
+  'criterion_total',
+  'criterion_rate',
+]
+
+function historicalCoverageMatches(summaryCoverage, completionCoverage) {
+  if (!summaryCoverage || !completionCoverage) return false
+  return HISTORICAL_COVERAGE_KEYS.every(key => (
+    typeof summaryCoverage[key] === 'number'
+    && summaryCoverage[key] === completionCoverage[key]
+  ))
+}
+
+/**
+ * Harbor 0.21 treats Job-plugin finalization failures as warnings, so a zero
+ * process exit is not proof that Historical artifacts completed. Validate the
+ * fresh plugin-owned sentinel and its core Summary cross-links fail-closed.
+ */
+export function assertHistoricalCompletion(summary, completion, {
+  jobName,
+  batchDigest,
+  batchId,
+  recordCount,
+}) {
+  const summaryValid = (
+    summary?.schema_version === 4
+    && summary?.job === jobName
+    && summary?.job_kind === 'historical-generation-evaluation'
+    && summary?.mode === 'diagnostic'
+    && summary?.execution_mode === 'observe-existing'
+    && summary?.evaluation_target?.digest === batchDigest
+    && summary?.evaluation_target?.batch_id === batchId
+    && summary?.evaluation_target?.record_count === recordCount
+    && summary?.n_trials === recordCount
+    && summary?.coverage?.total_trials === recordCount
+    && summary?.artifact_validation?.valid === true
+    && summary?.candidate === undefined
+  )
+  if (!summaryValid) {
+    throw new Error('HISTORICAL_JOB_IDENTITY_INVALID: the Summary is not a validated, Candidate-free Historical Generation Evaluation for this Batch')
+  }
+  const completionValid = (
+    completion?.schema_version === 1
+    && completion?.job_kind === 'historical-generation-evaluation'
+    && completion?.status === 'completed'
+    && completion?.valid === true
+    && completion?.job === jobName
+    && completion?.summary_path === 'evaluation-summary.json'
+    && completion?.artifact_registry_path === 'artifact-registry.json'
+    && historicalCoverageMatches(summary.coverage, completion.coverage)
+  )
+  if (!completionValid) {
+    throw new Error('HISTORICAL_JOB_ARTIFACT_VALIDATION_FAILED: the completion sentinel is missing, stale, or inconsistent with the validated Summary')
+  }
+}
+
 async function cliJson(config, args, { allowedExitCodes = [0], input } = {}) {
   let result
   try {
@@ -367,6 +434,128 @@ export async function runEvaluation(config, args, modelRuntime) {
       summary,
       doctor,
       contextPreview: preview,
+      process: { code: processResult.code },
+    }
+  } finally {
+    await lease.close()
+  }
+}
+
+/**
+ * Materialize an immutable Historical Generation Batch before Harbor creates
+ * its Job, then run a deterministic Observation Adapter. This path never
+ * snapshots or executes a Candidate.
+ */
+export async function runHistoricalEvaluation(config, args, modelRuntime) {
+  const projectRoot = path.resolve(config.projectRoot)
+  const batchPath = resolveWithin(projectRoot, args.batchPath, 'batchPath')
+  const batchDir = resolveWithin(projectRoot, args.batchDir ?? path.dirname(batchPath), 'batchDir')
+  const output = resolveWithin(projectRoot, path.join(batchDir, 'dataset'), 'historicalDataset')
+  if (!args.judgeBinding?.provider || !args.judgeBinding?.model) {
+    throw new Error('Historical Judge model binding is required before materialization')
+  }
+  const materialized = await cliJson(config, [
+    'historical', 'materialize',
+    '--project-root', projectRoot,
+    '--batch', batchPath,
+    '--output', output,
+    '--judge-provider', args.judgeBinding.provider,
+    '--judge-model', args.judgeBinding.model,
+    ...(args.judgeBinding.reasoning_effort === undefined
+      ? []
+      : ['--judge-reasoning-effort', args.judgeBinding.reasoning_effort]),
+  ])
+  const dataset = resolveWithin(projectRoot, materialized.dataset_path ?? output, 'historicalDataset')
+  const stack = resolveWithin(projectRoot, materialized.stack_path, 'historicalStack')
+  const batch = JSON.parse(await readFile(batchPath, 'utf8'))
+  const jobs = resolveWithin(projectRoot, config.jobsDir, 'jobsDir')
+  const jobName = args.jobName ?? makeHistoricalJobName(batch)
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(jobName)) {
+    throw new Error('jobName contains unsupported characters')
+  }
+  const agentImportPath = config.historicalAgentImportPath
+    ?? 'harbor_dsh_evolution.session_agent:SessionObservationAgent'
+  const pluginImportPath = config.historicalPluginImportPath
+    ?? 'dsh-historical-evaluation'
+  const harborArgs = [
+    'run', '-y', '-p', dataset,
+    '-a', agentImportPath,
+    '--job-name', jobName,
+    '--jobs-dir', jobs,
+    '--plugin', pluginImportPath,
+    '--plugin-kwarg', `batch_path=${batchPath}`,
+    '--plugin-kwarg', `dataset_path=${dataset}`,
+    '--plugin-kwarg', `stack_path=${stack}`,
+    '--plugin-kwarg', `project_root=${projectRoot}`,
+    '--plugin-kwarg', 'mode=diagnostic',
+  ]
+  const lease = await modelRuntime.openLease(args.judgeBinding, {
+    candidateDigest: batch.digest,
+    jobName,
+  })
+  const jobDir = path.join(jobs, jobName)
+  try {
+    let processResult
+    try {
+      processResult = await runProcess(config.harborBin, harborArgs, {
+        cwd: projectRoot,
+        timeoutMs: config.timeoutMs,
+        env: {
+          ...process.env,
+          ...(config.pythonPath ? { PYTHONPATH: config.pythonPath } : {}),
+          HSE_JUDGE_GATEWAY_URL: lease.endpoint,
+          HSE_JUDGE_GATEWAY_TOKEN: lease.token,
+          HSE_JUDGE_GATEWAY_PROVIDER: lease.candidateProvider,
+          HSE_JUDGE_GATEWAY_INFO: JSON.stringify({
+            protocol: lease.protocol,
+            candidate_digest: batch.digest,
+            job: jobName,
+            binding: {
+              provider: args.judgeBinding.provider,
+              model: args.judgeBinding.model,
+              ...(args.judgeBinding.reasoning_effort === undefined
+                ? {}
+                : { reasoning_effort: args.judgeBinding.reasoning_effort }),
+            },
+            model_info: lease.modelInfo,
+          }),
+          HSE_JUDGE_GATEWAY_PROTOCOL: lease.protocol,
+        },
+      })
+    } catch (error) {
+      throw await explainHarborFailure(error, jobDir)
+    }
+    let summary
+    let completion
+    try {
+      summary = JSON.parse(await readFile(path.join(jobDir, 'evaluation-summary.json'), 'utf8'))
+      completion = JSON.parse(await readFile(path.join(jobDir, 'historical-evaluation-complete.json'), 'utf8'))
+    } catch (error) {
+      throw new Error(
+        `HISTORICAL_JOB_INCOMPLETE: Harbor exited successfully but the Historical plugin did not write its summary/completion sentinel (${error.message})`,
+      )
+    }
+    assertHistoricalCompletion(summary, completion, {
+      jobName,
+      batchDigest: batch.digest,
+      batchId: batch.batch_id,
+      recordCount: Array.isArray(batch.records) ? batch.records.length : undefined,
+    })
+    return {
+      judgeModelBinding: {
+        provider: args.judgeBinding.provider,
+        model: args.judgeBinding.model,
+        ...(args.judgeBinding.reasoning_effort === undefined
+          ? {}
+          : { reasoning_effort: args.judgeBinding.reasoning_effort }),
+      },
+      job: path.relative(projectRoot, jobDir).split(path.sep).join('/'),
+      summary,
+      completion,
+      materialized: {
+        dataset: path.relative(projectRoot, dataset).split(path.sep).join('/'),
+        stack: path.relative(projectRoot, stack).split(path.sep).join('/'),
+      },
       process: { code: processResult.code },
     }
   } finally {

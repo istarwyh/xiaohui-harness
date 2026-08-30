@@ -5,6 +5,7 @@ import path from 'node:path'
 import { resolveWithin } from './evolution.js'
 
 const SUMMARY_NAME = 'evaluation-summary.json'
+const HISTORICAL_COMPLETION_NAME = 'historical-evaluation-complete.json'
 const DEFAULT_JOB_PAGE_SIZE = 20
 const MAX_JOB_PAGE_SIZE = 100
 const MAX_JSON_BYTES = 2 * 1024 * 1024
@@ -107,19 +108,65 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function capabilityMap(summary, context, lifecycle, registry, stack) {
-  const contextV2 = context?.schema_version === 2
-  const scoreValidity = summary?.schema_version === 3
+const CANDIDATE_JOB_KIND = 'candidate-evaluation'
+const HISTORICAL_JOB_KIND = 'historical-generation-evaluation'
+
+function normalizedJobKind(summary, context) {
+  const declared = summary?.job_kind ?? context?.job_kind
+  if (typeof declared === 'string' && declared) return declared
+  if (context?.protocol === 'historical-generation-evaluation-context/v1') return HISTORICAL_JOB_KIND
+  return CANDIDATE_JOB_KIND
+}
+
+function coverageView(summary) {
+  if (isObject(summary?.coverage)) return summary.coverage
+  const total = Number(summary?.n_trials ?? 0)
+  const scored = Number(summary?.scored_trial_count ?? summary?.n_valid_scores ?? 0)
+  const unscored = Number(
+    summary?.unscored_trial_count
+    ?? summary?.status_counts?.['completed-unscored']
+    ?? 0,
+  )
   return {
+    scored_trials: scored,
+    unscored_trials: unscored,
+    total_trials: total,
+    trial_rate: total ? scored / total : undefined,
+  }
+}
+
+function evaluatorMetaEvaluation(summary, context) {
+  return summary?.evaluator_meta_evaluation
+    ?? context?.downstream_analysis?.evaluator_meta_evaluation
+    ?? (normalizedJobKind(summary, context) === HISTORICAL_JOB_KIND
+      ? { status: 'not-run', validation_report_ref: null }
+      : undefined)
+}
+
+function capabilityMap(summary, context, lifecycle, registry, stack) {
+  const jobKind = normalizedJobKind(summary, context)
+  const historicalGeneration = jobKind === HISTORICAL_JOB_KIND
+  const contextV2 = context?.schema_version === 2
+  const historicalContext = context?.schema_version === 1
+    && context?.protocol === 'historical-generation-evaluation-context/v1'
+  const scoreValidity = summary?.schema_version === 3
+    || summary?.schema_version === 4
+  return {
+    jobKind,
     contextV2,
+    contextSupported: contextV2 || historicalContext,
+    historicalGeneration,
+    candidateEvaluation: !historicalGeneration,
     trialLifecycle: lifecycle?.schema_version === 1,
     scoreValidity,
     evidenceProvenance: scoreValidity,
-    artifactRegistry: registry?.schema_version === 1,
-    compare: contextV2,
+    artifactRegistry: [1, 2].includes(registry?.schema_version),
+    source: historicalGeneration,
+    compare: contextV2 && !historicalGeneration,
     evaluatorGovernance: stack?.schema_version === 1,
-    gate: contextV2 && summary?.mode === 'promotion-eligible',
-    readOnlyLegacy: !contextV2,
+    evaluatorMetaEvaluation: evaluatorMetaEvaluation(summary, context),
+    gate: contextV2 && !historicalGeneration && summary?.mode === 'promotion-eligible',
+    readOnlyLegacy: !contextV2 && !historicalContext,
   }
 }
 
@@ -131,7 +178,7 @@ function primaryMetric(summary, contract) {
 }
 
 function progressView(summary, lifecycle, updatedAt) {
-  const total = Number(lifecycle?.dataset_total ?? summary?.n_trials ?? 0)
+  const total = Number(lifecycle?.dataset_total ?? summary?.n_trials ?? summary?.coverage?.total_trials ?? 0)
   const lifecycleTrials = selectedLifecycleTrials(lifecycle)
   const completed = lifecycle
     ? lifecycleTrials.filter(item => item.terminal).length
@@ -151,19 +198,53 @@ function progressView(summary, lifecycle, updatedAt) {
   }
 }
 
-function jobStatus(summary, lifecycle, progress) {
+const HISTORICAL_COVERAGE_KEYS = [
+  'scored_trials', 'unscored_trials', 'total_trials', 'trial_rate',
+  'criterion_scored', 'criterion_total', 'criterion_rate',
+]
+
+function historicalCompletionValid(summary, completion, jobName) {
+  return (
+    summary?.schema_version === 4
+    && summary?.job === jobName
+    && summary?.job_kind === HISTORICAL_JOB_KIND
+    && summary?.mode === 'diagnostic'
+    && summary?.execution_mode === 'observe-existing'
+    && summary?.artifact_validation?.valid === true
+    && summary?.candidate === undefined
+    && completion?.schema_version === 1
+    && completion?.job_kind === HISTORICAL_JOB_KIND
+    && completion?.status === 'completed'
+    && completion?.valid === true
+    && completion?.job === jobName
+    && completion?.summary_path === SUMMARY_NAME
+    && completion?.artifact_registry_path === 'artifact-registry.json'
+    && HISTORICAL_COVERAGE_KEYS.every(key => (
+      typeof summary?.coverage?.[key] === 'number'
+      && summary.coverage[key] === completion?.coverage?.[key]
+    ))
+  )
+}
+
+function jobStatus(summary, lifecycle, progress, jobKind, completion, jobName) {
   if (summary?.__readError) return 'failed'
   if (!summary && !lifecycle) return 'pending'
   if (progress.active) return 'running'
   if (!summary && lifecycle) return 'running'
+  if (summary?.artifact_validation?.valid === false) return 'failed'
+  if (
+    jobKind === HISTORICAL_JOB_KIND
+    && !historicalCompletionValid(summary, completion, jobName)
+  ) return 'failed'
   if (Number(summary.n_infrastructure_exceptions ?? summary.n_exceptions ?? 0) > 0 || Number(summary.n_evaluation_exceptions ?? 0) > 0) return 'partial'
-  if (Number(summary.n_invalid_scores ?? 0) > 0) return 'attention'
+  const invalidScores = Number(summary.n_invalid_scores ?? 0)
+  if (invalidScores > 0) return 'attention'
   return 'completed'
 }
 
 async function readJob(jobsDir, entry, details) {
   const directory = path.join(jobsDir, entry.name)
-  const [summary, contextFile, promotion, contract, lifecycle, registry, stack] = await Promise.all([
+  const [summary, contextFile, promotion, contract, lifecycle, registry, stack, completion] = await Promise.all([
     readJson(path.join(directory, SUMMARY_NAME)),
     readJson(path.join(directory, 'evaluation-context.json')),
     readJson(path.join(directory, 'promotion-report.json')),
@@ -171,25 +252,38 @@ async function readJob(jobsDir, entry, details) {
     readJson(path.join(directory, 'trial-lifecycle.json')),
     readJson(path.join(directory, 'artifact-registry.json')),
     readJson(path.join(directory, 'evaluation-stack-manifest.json')),
+    readJson(path.join(directory, HISTORICAL_COMPLETION_NAME)),
   ])
   const evaluationContext = summary?.evaluation_context ?? contextFile
   if (!evaluationContext && !summary && !lifecycle) return undefined
   const updatedAt = details.mtime.toISOString()
   const progress = progressView(summary, lifecycle, updatedAt)
+  const jobKind = normalizedJobKind(summary, evaluationContext)
   const capabilities = capabilityMap(summary, evaluationContext, lifecycle, registry, stack)
+  const evaluationTarget = summary?.evaluation_target ?? evaluationContext?.evaluation_target
+  const generationSource = summary?.generation_source ?? evaluationContext?.generation_source
+  const coverage = coverageView(summary)
   return {
     name: entry.name,
     updatedAt,
-    status: jobStatus(summary, lifecycle, progress),
+    status: jobStatus(summary, lifecycle, progress, jobKind, completion, entry.name),
+    jobKind,
     mode: summary?.mode ?? evaluationContext?.mode,
+    executionMode: summary?.execution_mode ?? evaluationContext?.execution_mode,
     nTrials: progress.total,
     nDiscoveredTrials: Number(summary?.n_discovered_trials ?? lifecycle?.attempt_count ?? 0),
     nValidScores: summary?.n_valid_scores,
     nInvalidScores: summary?.n_invalid_scores,
+    nUnscoredTrials: Number(coverage.unscored_trials ?? 0),
     nExceptions: Number(summary?.n_exceptions ?? 0),
     primaryMetric: primaryMetric(summary, contract),
     metrics: summary?.metrics ?? {},
     candidate: summary?.candidate ?? evaluationContext?.candidate,
+    evaluationTarget,
+    generationSource,
+    generatorPopulation: evaluationTarget?.generator_population,
+    coverage,
+    evaluatorMetaEvaluation: evaluatorMetaEvaluation(summary, evaluationContext),
     dataset: evaluationContext?.dataset,
     evaluationContext,
     progress,
@@ -353,6 +447,7 @@ const DETAIL_ARTIFACTS = {
   diagnosis: 'diagnosis-report.json',
   optimization: 'optimization-report.json',
   promotion: 'promotion-report.json',
+  completion: HISTORICAL_COMPLETION_NAME,
 }
 
 function schemaIssue(key, value) {
@@ -360,8 +455,8 @@ function schemaIssue(key, value) {
   if (value?.__readError) return value.__readError
   if (!isObject(value)) return 'artifact must be an object'
   const versions = {
-    summary: [2, 3], candidate: [1], dataset: [1], datasetPreview: [1], stack: [1], stackSources: [1], context: [1, 2], contract: [1],
-    doctor: [1], population: [1, 2], lifecycle: [1], registry: [1], diagnosis: [1], optimization: [1, 2], promotion: [2],
+    summary: [2, 3, 4], candidate: [1], dataset: [1], datasetPreview: [1], stack: [1], stackSources: [1], context: [1, 2], contract: [1],
+    doctor: [1], population: [1, 2, 3], lifecycle: [1], registry: [1, 2], diagnosis: [1, 2], optimization: [1, 2, 3], promotion: [2], completion: [1],
   }[key]
   if (versions && !versions.includes(value.schema_version)) return `schema_version must be one of ${versions.join(', ')}`
   const required = {
@@ -369,8 +464,12 @@ function schemaIssue(key, value) {
     stack: ['stack_id', 'version', 'digest', 'components', 'judge'], stackSources: ['stack_digest', 'components'], context: ['digest'], contract: ['contract_id', 'version', 'primary_metric', 'metrics'],
     doctor: ['promotion_ready', 'findings'], population: ['population_size', 'groups', 'metrics'], lifecycle: ['dataset_total', 'trials'],
     registry: ['artifacts'], diagnosis: ['diagnoses'], optimization: ['hypotheses'], promotion: ['decision', 'reasons', 'policy_digest'],
+    completion: ['job_kind', 'status', 'valid', 'job', 'summary_path', 'artifact_registry_path', 'coverage'],
   }[key] ?? []
-  const missing = required.filter(field => value[field] === undefined)
+  const requiredFields = key === 'population' && value.schema_version === 3
+    ? ['population_size', 'coverage', 'metrics']
+    : required
+  const missing = requiredFields.filter(field => value[field] === undefined)
   return missing.length ? `missing fields: ${missing.join(', ')}` : undefined
 }
 
@@ -390,10 +489,35 @@ export async function readJobDetail(config, args) {
     return [key, value === undefined ? { status: 'unavailable', reason: 'capability-not-produced' } : issue ? { status: 'invalid', error: issue } : { status: 'valid' }]
   }))
   const context = artifacts.context ?? values[Object.keys(DETAIL_ARTIFACTS).indexOf('context')]
+  const summary = values[Object.keys(DETAIL_ARTIFACTS).indexOf('summary')]
+  const jobKind = normalizedJobKind(summary, context)
+  if (
+    jobKind === HISTORICAL_JOB_KIND
+    && !historicalCompletionValid(summary, artifacts.completion, job)
+  ) {
+    validation.completion = {
+      status: 'invalid',
+      error: 'Historical completion sentinel is missing, stale, or inconsistent with the Summary',
+    }
+  }
   const capabilities = capabilityMap(
-    values[Object.keys(DETAIL_ARTIFACTS).indexOf('summary')], context, artifacts.lifecycle, artifacts.registry, artifacts.stack,
+    summary, context, artifacts.lifecycle, artifacts.registry, artifacts.stack,
   )
-  return { schemaVersion: 2, job, capabilities, artifacts, validation }
+  const evaluationTarget = summary?.evaluation_target ?? context?.evaluation_target
+  return {
+    schemaVersion: 3,
+    job,
+    jobKind,
+    evaluationTarget,
+    generationSource: summary?.generation_source ?? context?.generation_source,
+    generatorPopulation: evaluationTarget?.generator_population,
+    executionMode: summary?.execution_mode ?? context?.execution_mode,
+    coverage: coverageView(summary),
+    evaluatorMetaEvaluation: evaluatorMetaEvaluation(summary, context),
+    capabilities,
+    artifacts,
+    validation,
+  }
 }
 
 function selectedLifecycleTrials(lifecycle) {
@@ -408,13 +532,15 @@ function selectedLifecycleTrials(lifecycle) {
 function normalizeTrial(trial, order) {
   const score = trial.score ?? { value: undefined, valid: trial.exception ? false : true, invalid_reasons: trial.exception ? ['infrastructure-error'] : [] }
   const datasetOrder = Number(trial.datasetOrder ?? trial.dataset_order ?? order)
+  const status = trial.status ?? trial.phase ?? (trial.exception ? 'infrastructure-error' : 'completed')
   return {
     id: trial.id ?? trial.execution_id ?? `dataset-${datasetOrder}`,
     name: trial.name ?? trial.trial_name ?? trial.dataset_trial ?? trial.trial,
     datasetTrial: trial.datasetTrial ?? trial.dataset_trial ?? trial.trial,
     datasetOrder,
     attempt: Number(trial.attempt ?? 1),
-    status: trial.status ?? trial.phase ?? (trial.exception ? 'infrastructure-error' : 'completed'),
+    status,
+    scoringStatus: status === 'completed-unscored' ? 'unscored' : score.valid ? 'scored' : 'invalid',
     terminal: trial.terminal ?? true,
     updatedAt: trial.updatedAt ?? trial.updated_at,
     score,
@@ -737,6 +863,32 @@ export async function readComparison(config, args) {
   if (!baseline || baseline.__readError || !candidate || candidate.__readError) throw new Error('Both Job summaries are required')
   const baselineContext = baseline.evaluation_context ?? await readJson(path.join(jobDirectory(config, baselineJob), 'evaluation-context.json'))
   const candidateContext = candidate.evaluation_context ?? await readJson(path.join(jobDirectory(config, candidateJob), 'evaluation-context.json'))
+  const baselineKind = normalizedJobKind(baseline, baselineContext)
+  const candidateKind = normalizedJobKind(candidate, candidateContext)
+  if (baselineKind !== CANDIDATE_JOB_KIND || candidateKind !== CANDIDATE_JOB_KIND) {
+    const error = {
+      code: 'UNSUPPORTED_JOB_KIND_FOR_PROMOTION',
+      message: 'Historical Generation Evaluation Jobs are diagnostic evidence and cannot be used as a Candidate baseline, comparison, or Promotion Gate input.',
+    }
+    return {
+      schemaVersion: 1,
+      baselineJob,
+      candidateJob,
+      baselineJobKind: baselineKind,
+      candidateJobKind: candidateKind,
+      comparable: false,
+      comparabilityReasons: [error],
+      metrics: {},
+      population: {},
+      improvedTrials: [],
+      regressedTrials: [],
+      newExceptions: [],
+      artifactRegressions: [],
+      gateEligibility: 'not-applicable',
+      error,
+      note: 'Convert reviewed badcases into a fixed regression Dataset before running Candidate comparison or Gate.',
+    }
+  }
   const reasons = []
   if (baselineContext?.schema_version !== 2 || candidateContext?.schema_version !== 2) reasons.push('Context v2 is required')
   if (!baselineContext?.digest || baselineContext.digest !== candidateContext?.digest) reasons.push('Evaluation Context differs; establish a fresh baseline')

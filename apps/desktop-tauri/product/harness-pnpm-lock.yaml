@@ -3301,9 +3301,6 @@ importers:
       '@deepseek-ai/dsh-native-command':
         specifier: workspace:^
         version: link:../../util/native-command
-      '@deepseek-ai/dsh-permission-presets':
-        specifier: workspace:^
-        version: link:../../interaction/permission-presets
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -3721,12 +3718,21 @@ importers:
       '@deepseek-ai/dsh-anonymous-user-id':
         specifier: workspace:^
         version: link:../../identity/anonymous-user-id
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: workspace:^
+        version: link:../../util/atomic-write
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
         version: link:../../attachment/attachment
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:^
         version: link:../../credentials/credentials
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../util/home-paths
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -4043,7 +4049,7 @@ importers:
         specifier: ^4.0.1
         version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-tools':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../core/tools
 
   packages/product/dsh-better-sidebar:
@@ -4115,43 +4121,43 @@ importers:
         specifier: ^4.0.1
         version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-agent':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../core/agent
       '@deepseek-ai/dsh-client-locale':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/locale
       '@deepseek-ai/dsh-client-ui-conversation':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-conversation
       '@deepseek-ai/dsh-client-ui-primitives':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-primitives
       '@deepseek-ai/dsh-client-ui-settings':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-settings
       '@deepseek-ai/dsh-client-ui-slots':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-slots
       '@deepseek-ai/dsh-host-webserver':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../host/webserver
       '@deepseek-ai/dsh-invariants':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../runtime-diagnostics/invariants
       '@deepseek-ai/dsh-llm':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../llm/llm
       '@deepseek-ai/dsh-session':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../core/session
       '@deepseek-ai/dsh-settings':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../settings/settings
       '@deepseek-ai/dsh-subagent':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../subagent/subagent
       '@deepseek-ai/dsh-tools':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../core/tools
       '@huanlin/dsh-plugin-better-locale':
         specifier: ^0.1.0
@@ -4196,67 +4202,67 @@ importers:
         specifier: ^4.0.1
         version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-agent':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../core/agent
       '@deepseek-ai/dsh-api-remotes':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../api/remotes
       '@deepseek-ai/dsh-atomic-write':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../util/atomic-write
       '@deepseek-ai/dsh-attachment':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../attachment/attachment
       '@deepseek-ai/dsh-client-connection':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/connection
       '@deepseek-ai/dsh-client-locale':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/locale
       '@deepseek-ai/dsh-client-runtime':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/runtime
       '@deepseek-ai/dsh-client-ui-primitives':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-primitives
       '@deepseek-ai/dsh-client-ui-settings':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-settings
       '@deepseek-ai/dsh-client-ui-slots':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-slots
       '@deepseek-ai/dsh-client-ui-tool':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-tool
       '@deepseek-ai/dsh-credentials':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../credentials/credentials
       '@deepseek-ai/dsh-fs':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../fs/fs
       '@deepseek-ai/dsh-host-apiproxy':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../host/apiproxy
       '@deepseek-ai/dsh-invariants':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../runtime-diagnostics/invariants
       '@deepseek-ai/dsh-llm':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../llm/llm
       '@deepseek-ai/dsh-llm-pi-ai':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../llm/llm-pi-ai
       '@deepseek-ai/dsh-session':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../core/session
       '@deepseek-ai/dsh-settings':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../settings/settings
       '@deepseek-ai/dsh-tools':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../core/tools
       '@deepseek-ai/dsh-web':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../web/web
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
@@ -4274,10 +4280,10 @@ importers:
   packages/product/harbor-evolution:
     dependencies:
       '@deepseek-ai/dsh-skill':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../skill/skill
       '@deepseek-ai/dsh-tools':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../core/tools
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
@@ -4289,31 +4295,31 @@ importers:
         specifier: ^4.0.1
         version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-api-remotes':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../api/remotes
       '@deepseek-ai/dsh-client-connection':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/connection
       '@deepseek-ai/dsh-client-locale':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/locale
       '@deepseek-ai/dsh-client-runtime':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/runtime
       '@deepseek-ai/dsh-client-ui-conversation':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-conversation
       '@deepseek-ai/dsh-client-ui-settings':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-settings
       '@deepseek-ai/dsh-client-ui-sidebar':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-sidebar
       '@deepseek-ai/dsh-client-ui-slots':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../client/ui-slots
       '@deepseek-ai/dsh-settings':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../settings/settings
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
@@ -4322,10 +4328,10 @@ importers:
   packages/product/plugin-marketplace:
     dependencies:
       '@deepseek-ai/dsh-llm':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../llm/llm
       '@deepseek-ai/dsh-settings':
-        specifier: 0.1.1-rc.1
+        specifier: 0.1.1-rc.2
         version: link:../../settings/settings
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery

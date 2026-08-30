@@ -1,7 +1,7 @@
 [project]
 name = "harbor-dsh-evolution"
-version = "0.7.3"
-description = "Candidate identity, evaluation summaries, and promotion gates for DeepSeek Harness agents evaluated with Harbor."
+version = "0.8.1"
+description = "Candidate and Historical Session evaluation workflows for DeepSeek Harness agents evaluated with Harbor."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -35,6 +35,7 @@ Repository = "https://github.com/istarwyh/harbor-self-evolving.git"
 
 [project.entry-points."harbor.plugins"]
 dsh-evolution = "harbor_dsh_evolution.plugin:EvolutionPlugin"
+dsh-historical-evaluation = "harbor_dsh_evolution.historical_plugin:HistoricalGenerationEvaluationPlugin"
 
 [project.scripts]
 harbor-dsh = "harbor_dsh_evolution.cli:main"

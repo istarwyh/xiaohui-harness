@@ -7,9 +7,9 @@
   "archiveSha256": "f5aeaad6be5346fe2c636c0b3d4f29794a1048211192b24fe4d9572a00bf09d6",
   "snapshotMethod": "npm pack file selection from the pinned GitHub commit",
   "upstreamTreeSha256": "9edab5dfebff3914b7bb57533a0aedad3a9de8bf567b69313f7f77fdbc5c42ee",
-  "treeSha256": "373429ed35349508cf8081ac449d29c891e8120a37df4ed8cbe4e004b6c2a3c2",
+  "treeSha256": "062b6dff203aab9d490d94e0ac5051a45ae08f28ad24170fd6650f6f20d048f8",
   "patches": [
-    "Set @deepseek-ai/dsh-tools peer range from ^0.1.0-rc.6 || ^0.1.1-rc.1 to 0.1.1-rc.1."
+    "Set @deepseek-ai/dsh-tools peer range from 0.1.1-rc.1 to 0.1.1-rc.2."
   ],
   "repository": "https://github.com/Zhenyu98/dsh-context-doctor",
   "license": "BSD-3-Clause"

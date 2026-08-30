@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url'
 import { loadBundledSkill } from './lib/official-skill.js'
 import { CandidateModelRuntime } from './lib/model-runtime.js'
 import { RUNTIME_POLICY } from './lib/runtime-identity.js'
+import { SessionDiagnosticService } from './lib/session-diagnostic.js'
 import { EvolutionService } from './lib/service.js'
+import { runHistoricalEvaluation } from './lib/evolution.js'
 import { installDashboardWeb } from './lib/web.js'
 
 export const name = 'harbor-evolution'
@@ -29,6 +31,8 @@ export const Config = Schema.object({
   harborDshBin: Schema.string().default(''),
   agentImportPath: Schema.string().default('harbor_dsh_evolution.agent:DshCandidateAgent'),
   pluginImportPath: Schema.string().default('dsh-evolution'),
+  historicalAgentImportPath: Schema.string().default('harbor_dsh_evolution.session_agent:SessionObservationAgent'),
+  historicalPluginImportPath: Schema.string().default('dsh-historical-evaluation'),
   pythonPath: Schema.string().default(''),
   timeoutMs: Schema.number().default(1800000),
   candidateProvider: Schema.string().default(''),
@@ -38,6 +42,8 @@ export const Config = Schema.object({
   modelBrokerAdvertisedHost: Schema.string().default('host.docker.internal'),
   modelBrokerMaxRequests: Schema.number().min(1).default(1000),
   modelBrokerMaxRequestBytes: Schema.number().min(1024).default(33554432),
+  sessionMaxReads: Schema.number().min(1).default(100),
+  sessionReadConcurrency: Schema.number().min(1).default(4),
 })
 
 function jsonTool(definition, execute) {
@@ -83,6 +89,12 @@ export function apply(ctx, config) {
   const modelRuntime = new CandidateModelRuntime(ctx, resolved)
   const metadata = { pluginVersion: packageJson.version, projectRootSource: 'configured' }
   const service = new EvolutionService(resolved, metadata, modelRuntime)
+  const sessionDiagnostic = new SessionDiagnosticService({
+    ctx,
+    config: resolved,
+    modelRuntime,
+    runHistoricalEvaluation,
+  })
   const serviceForTool = exec => {
     const projectRoot = synchronizeWorkbenchProjectRoot(service, exec)
     return new EvolutionService({ ...resolved, projectRoot }, metadata, modelRuntime)
@@ -154,6 +166,34 @@ export function apply(ctx, config) {
       workspaceSubdir: { type: 'string', description: 'Defaults to harbor-diagnostic under the current Agent session directory.' },
     },
   }, (args, exec) => serviceForTool(exec).quickDiagnostic(args)))
+
+  ctx.tools.register(jsonTool({
+    name: 'harbor_session_diagnostic_preview',
+    description: 'Preview up to 10 recently active, completed top-level DSH Sessions in the exact current workspace as an observe-existing Historical Generation Job. Returns only safe metadata and an owner-bound 15-minute selection token; it never exposes raw Session ids or transcript/tool payloads.',
+    parameters: {
+      limit: { type: 'number', description: 'Number of eligible recent Sessions, from 1 to 10. Defaults to 10.' },
+      createdAfter: { type: 'string', description: 'Optional ISO-8601 lower bound on Session creation time. Use it to narrow an exact scan when the workspace exceeds the configured read budget.' },
+      includeFeedback: { type: 'boolean', description: 'Include only feedback counts in Preview and redacted feedback in the frozen Batch. Defaults to true.' },
+      evaluatorProvider: { type: 'string', description: 'Optional Judge provider; supply together with evaluatorModel. Defaults to the calling DSH Agent model and is frozen into the confirmation token.' },
+      evaluatorModel: { type: 'string' },
+      evaluatorReasoningEffort: { type: 'string', description: 'Optional Judge reasoning effort; requires explicit evaluatorProvider and evaluatorModel.' },
+    },
+  }, (args, exec) => {
+    synchronizeWorkbenchProjectRoot(service, exec)
+    return sessionDiagnostic.preview(args, exec)
+  }))
+
+  ctx.tools.register(jsonTool({
+    name: 'harbor_session_diagnostic_run',
+    description: 'Consume a confirmed Session selection token, revalidate every immutable source boundary, write a private redacted Historical Generation Batch, materialize one Harbor Trial per Session, and run the non-promotion Historical Job.',
+    parameters: {
+      selectionToken: { type: 'string', required: true },
+      jobName: { type: 'string' },
+    },
+  }, (args, exec) => {
+    synchronizeWorkbenchProjectRoot(service, exec)
+    return sessionDiagnostic.run(args, exec)
+  }))
 
   ctx.tools.register(jsonTool({
     name: 'harbor_dataset_validate',
