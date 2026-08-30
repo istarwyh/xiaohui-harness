@@ -4,7 +4,7 @@
 
 这是一个可安装的 DeepSeek Harness 插件与 Skill，用于执行稳定的 Harbor 评测和受控的 Agent 演进，并在 DSH Web 中提供原生工作台。
 
-它为 DSH 提供十四个严格的 Harbor 工具、专用 Tool Card、九阶段 Evaluation Workbench、安装 Doctor，以及可由用户和模型调用的 `evolve-agent-with-harbor` Skill。Skill 从四个面向用户的概念开始——Dataset（测什么）、Generator（谁来回答）、Evaluator 及评测标准（什么算好）和 Optimizer（谁来改进）——再把已确认的选择编译为严格的 Evaluation Stack。DSH Generator 可以显式固定当前默认模型，作为不含密钥的 Candidate 身份，同时保留每个 Job 的 Host Broker 凭据边界。插件会验证 Dataset 身份、检查 Trial Lifecycle 与 Score Validity、管理独立的 Ground Truth 元评测、诊断证据来源，把每轮演进限制为一个受控 Candidate 变更，并且只在明确操作中调用 Promotion Gate。
+它为 DSH 提供十六个严格的 Harbor 工具、专用 Tool Card、九阶段 Evaluation Workbench、安装 Doctor，以及可由用户和模型调用的 `evolve-agent-with-harbor` Skill。Skill 从四个面向用户的概念开始——Dataset（测什么）、Generator（谁来回答）、Evaluator 及评测标准（什么算好）和 Optimizer（谁来改进）——再把已确认的选择编译为严格的 Evaluation Stack。没有提供 Dataset 时，它也可以先预览近期已完成的 DSH Session，再把每个不可变 Session 作为一个 Historical Trial 进行评测，而不重新运行 Candidate。DSH Generator 可以显式固定当前默认模型，作为不含密钥的 Candidate 身份，同时保留每个 Job 的 Host Broker 凭据边界。插件会验证 Dataset 身份、检查 Trial Lifecycle 与 Score Validity、管理独立的 Ground Truth 元评测、诊断证据来源，把每轮演进限制为一个受控 Candidate 变更，并且只在明确操作中调用 Promotion Gate。
 
 ## 安装
 
@@ -16,10 +16,12 @@ npx --yes dsh-harbor-evolution@latest setup --project-root "$PWD"
 
 Setup 命令会安装两个必需的运行时：
 
-- 在托管的 Python 环境中安装 `harbor-dsh-evolution==0.7.3`。
-- 在所选 DSH Profile 中安装 `dsh-harbor-evolution@0.7.3`。
+- 在托管的 Python 环境中安装 `harbor-dsh-evolution==0.8.1`。
+- 在所选 DSH Profile 中安装 `dsh-harbor-evolution@0.8.1`。
 
 随后，它会把 Harbor 可执行文件的绝对路径与一个回退 `projectRoot` 写入 Profile 的 `harbor-evolution` 配置块，并验证集成。Agent Tool 每次调用都会以当前 Session 的绝对工作目录作为项目根目录；配置值只供 Web Workbench 和非 Agent 场景回退使用。无关的 Profile 条目会被保留；重复执行只会更新同一个配置块。
+
+Setup 成功要求 `harbor plugins list` 同时发现用于 Candidate Job 的 `dsh-evolution` 和用于观测已有 Session Job 的 `dsh-historical-evaluation`。
 
 默认 Profile 是 `web`。只有实际运行该 Profile 时才使用 `--profile headless`。查看全部选项：
 
@@ -42,10 +44,17 @@ Inspect this workspace and help me clarify and initialize a stable Harbor self-e
 - `harbor_model_binding`
 - `harbor_evolution_init`
 - `harbor_evolution_doctor`
+- `harbor_quick_diagnostic_init`
+- `harbor_session_diagnostic_preview`
+- `harbor_session_diagnostic_run`
 - `harbor_dataset_validate`
 - `harbor_context_preview`
 - `harbor_eval_run`
 - `harbor_eval_result`
+- `harbor_evaluator_inspect`
+- `harbor_evaluator_update`
+- `harbor_ground_truth_init`
+- `harbor_evaluator_meta_evaluate`
 - `harbor_candidate_compare`
 
 在 `web` Profile 中，同一个包还会注册：
@@ -59,6 +68,14 @@ Inspect this workspace and help me clarify and initialize a stable Harbor self-e
 Web UI 有意保持只读。启动评测和决定晋级始终属于 Agent + Skill 的显式流程，因此页面刷新不会启动昂贵 Job。
 
 直接评测需要 `candidatePath`、`datasetPath`、`stackPath` 和显式 `mode`；`promotion-eligible` 还需要 `policyPath`。应优先使用 Skill，因为在关键身份与评测契约尚未澄清时，它不会运行或比较 Job。
+
+## Historical Session 冷启动
+
+用户未提供 Dataset 时，Skill 会先调用 `harbor_session_diagnostic_preview`，从 Agent 的确切工作目录中预览最多十个近期已完成的业务 Session。预览只返回安全元数据和一个短期确认 Token。确认卡会标明 Evaluator 与 Judge，披露同模型耦合和预计请求数，并提示脱敏证据将保留在 `.harbor/private` 与 `jobs` 下；它不会暴露原始 Session id 或 Transcript。
+
+用户明确确认后，`harbor_session_diagnostic_run` 只接收 `selectionToken` 和可选 Job 名称。它会重新验证已冻结的 Session 与 Feedback Digest，物化不可变的 Historical Batch 及配套 Dataset 和 Stack，并把每个 Session Observation 作为一个 Harbor Trial 进行评测。该 Job 不会重新运行 Candidate，不能进入 Promotion Gate，并把 Evaluator Meta-Evaluation 记录为 `not-run`，因为 Evaluator 可靠性需要另行执行独立的 Ground Truth 工作流。
+
+缺少必要证据时，Historical Trial 可以以 `completed-unscored` 结束。这是 Evaluator 的正常弃权，不是零分或基础设施失败；应结合 Trial 与 Criterion 覆盖率解释结果。
 
 ## Candidate 模型绑定
 
