@@ -9,6 +9,7 @@ import {
   requestDesktopNetworkProxyTest,
   type NetworkProxySettings,
 } from '../src/client/desktop-network-proxy.ts'
+import { requestHostNetworkProxyTest } from '../src/client/host-network-proxy.ts'
 
 class FakeParent {
   readonly messages: Array<{ message: unknown, targetOrigin: string }> = []
@@ -163,5 +164,37 @@ describe('desktop network proxy browser bridge', () => {
       'proxy_1',
       'test',
     )).toBeUndefined()
+  })
+})
+
+describe('Node Host network proxy diagnostic client', () => {
+  it('sends only the fixed same-origin JSON POST and validates its result', async () => {
+    const calls: Array<{ input: string, init: RequestInit }> = []
+    const result = await requestHostNetworkProxyTest(async (input, init) => {
+      calls.push({ input, init })
+      return {
+        json: async () => ({ ok: true, status: 200, proxied: true, errorCode: '' }),
+      }
+    })
+    expect(calls).toEqual([{
+      input: '/api/xiaohui/network-proxy/test',
+      init: { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+    }])
+    expect(result).toEqual({ ok: true, status: 200, proxied: true, errorCode: '' })
+  })
+
+  it('rejects extra fields and unbounded transport details', async () => {
+    await expect(requestHostNetworkProxyTest(async () => ({
+      json: async () => ({
+        ok: false,
+        status: 0,
+        proxied: true,
+        errorCode: 'UND_ERR_CONNECT_TIMEOUT',
+        proxyUrl: 'http://secret@127.0.0.1:7890',
+      }),
+    }))).rejects.toThrow('host-network-proxy-response-invalid')
+    await expect(requestHostNetworkProxyTest(async () => ({
+      json: async () => ({ ok: false, status: 0, proxied: true, errorCode: 'x'.repeat(65) }),
+    }))).rejects.toThrow('host-network-proxy-response-invalid')
   })
 })

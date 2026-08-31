@@ -19,7 +19,7 @@ await build({
   platform: 'node',
   format: 'esm',
   target: ['node22'],
-  external: ['@deepseek-ai/*', 'undici'],
+  external: ['@deepseek-ai/*'],
 })
 
 await build({

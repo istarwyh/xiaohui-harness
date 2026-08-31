@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing xiaohui-v* tag to rebuild and publish
         required: true
-        default: xiaohui-v0.2.8
+        default: xiaohui-v0.2.9
 
 permissions:
   contents: write

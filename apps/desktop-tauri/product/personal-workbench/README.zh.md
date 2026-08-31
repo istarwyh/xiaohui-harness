@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-这个第一方 XiaoHui Harness 产品插件负责三个通用设置卡片。用户可以在**设置 → 通用设置 → 我的工作台**中替换侧边栏工作台名称和 Logo、预览草稿并恢复 XiaoHui 默认值。**设置 → 通用设置 → 网络代理**用于配置应用全局的直连、跟随 macOS 系统代理或自定义代理策略，通过 ChatGPT 测试所选链路，并在保存后重启 XiaoHui。**设置 → 通用设置 → 应用生命周期**会请求受信任的桌面 Shell 运行带签名的应用更新器，或在停止私有 Host 后重启整个应用。重启会加载通过 Plugin Marketplace 安装的插件。桌面操作在独立的 `dsh web` 中保持可见但不可用；浏览器请求不能选择任意 Tauri Command，代理配置不接受凭据，更新操作也不会在最终用户机器上刷新插件源码，因为内置产品插件会随带签名的应用 Release 一起升级。
+这个第一方 XiaoHui Harness 产品插件负责三个通用设置卡片。用户可以在**设置 → 通用设置 → 我的工作台**中替换侧边栏工作台名称和 Logo、预览草稿并恢复 XiaoHui 默认值。**设置 → 通用设置 → 网络代理**用于配置应用全局的直连、跟随 macOS 系统代理或自定义代理策略，通过 ChatGPT 分别测试桌面草稿链路与当前 Node Host 链路，并在保存后重启 XiaoHui。**设置 → 通用设置 → 应用生命周期**会请求受信任的桌面 Shell 运行带签名的应用更新器，或在停止私有 Host 后重启整个应用。重启会加载通过 Plugin Marketplace 安装的插件。桌面操作在独立的 `dsh web` 中保持可见但不可用；浏览器请求不能选择任意 Tauri Command，代理配置不接受凭据，更新操作也不会在最终用户机器上刷新插件源码，因为内置产品插件会随带签名的应用 Release 一起升级。
 
 工作台身份保存在当前 DSH Profile 的 `personal-workbench` 命名空间：
 
@@ -15,7 +15,7 @@ personal-workbench:
 
 浏览器会把上传图片保存为当前 Profile 中的 data URL。修改名称与 Logo 不会改变浏览器标题、可执行文件名、应用图标、主题或其他 UI 文案。
 
-网络代理保存在 XiaoHui 原生桌面设置中，不属于 DSH Profile。直连模式会从应用进程树中移除继承的代理变量。跟随系统模式通过 `/usr/sbin/scutil` 读取 macOS 固定的 HTTP 与 HTTPS 代理 Endpoint；PAC、自动发现与只有 HTTP 的配置会被拒绝，因为把这些设置转换给 Node 子进程后无法保持相同的路由语义。自定义模式要求分别填写不含凭据的 HTTP 与 HTTPS URL，并可补充绕过主机；XiaoHui 始终绕过自己的 Loopback Host。第一方 Host Entry 会在所选链路使用代理时安装 Undici 环境代理 Dispatcher，使内置 Node 22.19 Host 的全局 `fetch` 路由不依赖后续 Node Flag 或外部插件。所选策略会在用户确认的应用重启后生效，统一覆盖私有 Host、插件子进程、Profile 安装、Runtime 预配与签名应用更新。
+网络代理保存在 XiaoHui 原生桌面设置中，不属于 DSH Profile。直连模式会从应用进程树中移除继承的代理变量。跟随系统模式通过 `/usr/sbin/scutil` 读取 macOS 固定的 HTTP 与 HTTPS 代理 Endpoint；PAC、自动发现与只有 HTTP 的配置会被拒绝，因为把这些设置转换给 Node 子进程后无法保持相同的路由语义。自定义模式要求分别填写不含凭据的 HTTP 与 HTTPS URL，并可补充绕过主机；XiaoHui 始终绕过自己的 Loopback Host。DSH CLI 会在加载启动环境后、导入 Profile Boot 前安装 Undici 环境代理 Dispatcher，使内置 Node 22.19 Host 的全局 `fetch` 路由不依赖后续 Node Flag 或已配置插件。Host 诊断会先要求当前进程提供 CLI 已完成安装的证明，再使用固定的同源 JSON POST，并且只返回可达性、HTTP 状态、是否使用代理以及 `UND_ERR_CONNECT_TIMEOUT` 等有界 Transport Code；它不会返回请求错误、代理 URL 或凭据。所选策略会在用户确认的应用重启后生效，统一覆盖私有 Host、插件子进程、Profile 安装、Runtime 预配与签名应用更新。
 
 ## 模型体验
 

@@ -700,6 +700,7 @@ async function runBrowserSmoke(baseUrl, env) {
 
     const proxyPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
     const proxyClientResponses = {}
+    let hostProxyDiagnosticRequests = 0
     proxyPage.on('pageerror', error => { pageErrors.push(String(error)) })
     proxyPage.on('console', message => {
       if (message.type() === 'error') consoleErrors.push(message.text())
@@ -709,6 +710,19 @@ async function runBrowserSmoke(baseUrl, env) {
       for (const id of PRODUCT_CLIENT_IDS) {
         if (pathname === `/plugins/${id}/client.js`) proxyClientResponses[id] = response.status()
       }
+    })
+    await proxyPage.route('**/api/xiaohui/network-proxy/test', route => {
+      const request = route.request()
+      if (request.method() !== 'POST'
+        || request.headers()['content-type'] !== 'application/json') {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: '{}' })
+      }
+      hostProxyDiagnosticRequests += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, status: 200, proxied: true, errorCode: '' }),
+      })
     })
     const proxyShellNavigation = await proxyPage.goto(desktopBridge.url, { waitUntil: 'load', timeout: 30_000 })
     if (proxyShellNavigation === null || proxyShellNavigation.status() !== 200) {
@@ -732,7 +746,13 @@ async function runBrowserSmoke(baseUrl, env) {
     await proxySettings.getByText('HTTP_PROXY=http://127.0.0.1:7890', { exact: true }).waitFor({ timeout: 10_000 })
     const embeddedProxyTest = proxySettings.getByRole('button', { name: 'Test ChatGPT connection', exact: true })
     await embeddedProxyTest.click()
-    await proxySettings.getByText('Connection succeeded (HTTP 204).', { exact: true }).waitFor({ timeout: 10_000 })
+    await proxySettings.getByText(
+      'Desktop draft HTTP 204; current Node Host HTTP 200 (environment proxy).',
+      { exact: true },
+    ).waitFor({ timeout: 10_000 })
+    if (hostProxyDiagnosticRequests !== 1) {
+      throw new Error(`desktop proxy test sent ${hostProxyDiagnosticRequests} Node Host diagnostic requests`)
+    }
     const embeddedProxySave = proxySettings.getByRole('button', { name: 'Save and restart XiaoHui', exact: true })
     await embeddedProxySave.click()
     await proxySettings.getByText(
@@ -798,9 +818,8 @@ async function runHostSmoke(root, productRuntimeRoot) {
   const proxyVerifier = join(world, 'proxy-dispatcher-verifier.mjs')
   const proxyPackage = pathToFileURL(join(
     root,
-    'packages',
-    'product',
-    'personal-workbench',
+    'apps',
+    'cli',
     'package.json',
   )).href
   writeFileSync(proxyVerifier, `import { createRequire } from 'node:module'

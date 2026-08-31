@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-xiaohui-global-network-proxy.md
-2026-08-30-xiaohui-global-network-proxy.md: d57a3d3e20289d1a97caa4c2b7ac88d3eb654872
-2026-08-30-xiaohui-global-network-proxy.zh.md: ec3882cd41408c161e589672bc059a4fbd007893
+2026-08-30-xiaohui-global-network-proxy.md: b2f91254b5c02628a7f97d99c2455f5debc84981
+2026-08-30-xiaohui-global-network-proxy.zh.md: d948c941cc55ccec5dbfdcecafa06eefb953c067

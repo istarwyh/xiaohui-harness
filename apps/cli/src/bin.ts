@@ -28,9 +28,12 @@ const invocation = parseDshArgs(process.argv.slice(2), readVersion())
 
 switch (invocation.mode) {
   case 'profile': {
+    const environment = loadLayeredEnv('dsh')
+    const { installEnvironmentProxyDispatcher } = await import('./environment-proxy.ts')
+    installEnvironmentProxyDispatcher()
     const { runProfile } = await import('./profile-boot.ts')
     await runProfile({
-      environment: loadLayeredEnv('dsh'),
+      environment,
       profile: invocation.profile,
       patchFiles: invocation.patches,
       args: invocation.args,
