@@ -5802,7 +5802,7 @@ dependencies = [
 
 [[package]]
 name = "xiaohui-harness"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "dirs",
  "flate2",
@@ -5810,6 +5810,8 @@ dependencies = [
  "hex",
  "libc",
  "reqwest 0.12.28",
+ "rustls",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "sha2",

@@ -15,7 +15,7 @@ personal-workbench:
 
 浏览器会把上传图片保存为当前 Profile 中的 data URL。修改名称与 Logo 不会改变浏览器标题、可执行文件名、应用图标、主题或其他 UI 文案。
 
-网络代理保存在 XiaoHui 原生桌面设置中，不属于 DSH Profile。直连模式会从应用进程树中移除继承的代理变量。跟随系统模式通过 `/usr/sbin/scutil` 读取 macOS 固定的 HTTP 与 HTTPS 代理 Endpoint；PAC、自动发现与只有 HTTP 的配置会被拒绝，因为把这些设置转换给 Node 子进程后无法保持相同的路由语义。自定义模式要求分别填写不含凭据的 HTTP 与 HTTPS URL，并可补充绕过主机；XiaoHui 始终绕过自己的 Loopback Host。DSH CLI 会在加载启动环境后、导入 Profile Boot 前安装 Undici 环境代理 Dispatcher，使内置 Node 22.19 Host 的全局 `fetch` 路由不依赖后续 Node Flag 或已配置插件。Host 诊断会先要求当前进程提供 CLI 已完成安装的证明，再使用固定的同源 JSON POST，并且只返回可达性、HTTP 状态、是否使用代理以及 `UND_ERR_CONNECT_TIMEOUT` 等有界 Transport Code；它不会返回请求错误、代理 URL 或凭据。所选策略会在用户确认的应用重启后生效，统一覆盖私有 Host、插件子进程、Profile 安装、Runtime 预配与签名应用更新。
+网络代理保存在 XiaoHui 原生桌面设置中，不属于 DSH Profile。直连模式会从应用进程树中移除继承的代理变量。跟随系统模式通过 `/usr/sbin/scutil` 读取 macOS 固定的 HTTP 与 HTTPS 代理 Endpoint；PAC、自动发现与只有 HTTP 的配置会被拒绝，因为把这些设置转换给 Node 子进程后无法保持相同的路由语义。自定义模式要求分别填写不含凭据的 HTTP 与 HTTPS URL，并可补充绕过主机；XiaoHui 始终绕过自己的 Loopback Host。DSH CLI 会在加载启动环境后、导入 Profile Boot 前安装 Undici 环境代理 Dispatcher，使内置 Node 22.19 Host 的全局 `fetch` 路由不依赖后续 Node Flag 或已配置插件。XiaoHui 还会启用 Node 的系统 CA Store，而原生 reqwest Client 会使用 macOS 平台验证器；证书校验始终开启，因此执行拦截的企业根证书必须已在 Keychain 中受信任。设置测试会分别标注桌面草稿与运行中 Host 的结果，并且只返回可达性、HTTP 状态、是否使用代理以及 `UNKNOWN_ISSUER`、`UNABLE_TO_VERIFY_LEAF_SIGNATURE` 等有界错误码；它不会返回请求错误、代理 URL 或凭据。所选策略会在用户确认的应用重启后生效，统一覆盖私有 Host、插件子进程、Profile 安装、Runtime 预配与签名应用更新。
 
 ## 模型体验
 

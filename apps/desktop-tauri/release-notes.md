@@ -1,17 +1,17 @@
-# XiaoHui Harness 0.2.9
+# XiaoHui Harness 0.2.10
 
 ## English
 
-- Fixes the Node Host proxy path used by GPT OAuth Agent requests. The DSH CLI now installs Undici's environment-proxy Dispatcher before loading the Profile, Host, or configured plugins, including with the bundled Node 22.19 runtime.
-- Extends **Test ChatGPT connection** to check the desktop draft and the running Node Host independently. The Host test fails explicitly when the CLI Dispatcher is missing and reports only bounded HTTP or transport status without proxy URLs, credentials, or OAuth data.
-- Adds real CLI regressions for HTTP proxy routing, HTTPS `CONNECT`, and `NO_PROXY`, and keeps the signed updater, runtime provisioning, profile repair, and package installation on the existing application-wide proxy policy.
+- Makes enterprise HTTPS interception work with trusted macOS certificates. Native reqwest clients use the macOS platform verifier, and every XiaoHui-managed Node process enables the system CA store through `--use-system-ca`.
+- Reports the desktop-native and running Node Host connection outcomes separately, including bounded certificate codes such as `UNKNOWN_ISSUER` and `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, so one successful route cannot hide the other route's failure.
+- Keeps certificate verification enabled and directs certificate failures to the enterprise root trust in macOS Keychain. The application-wide proxy continues to cover GPT OAuth providers, plugins, package installation, runtime provisioning, and signed updates after restart.
 
 The application is not yet signed or notarized with an Apple Developer identity.
 
 ## 中文
 
-- 修复 GPT OAuth Agent 请求使用的 Node Host 代理链路。DSH CLI 现在会在加载 Profile、Host 或已配置插件前安装 Undici 环境代理 Dispatcher，该行为也覆盖内置 Node 22.19 Runtime。
-- 扩展「测试 ChatGPT 连接」，分别检查桌面草稿链路与正在运行的 Node Host。CLI Dispatcher 缺失时，Host 测试会明确失败；诊断只返回有界的 HTTP 或 Transport 状态，不包含代理 URL、认证信息或 OAuth 数据。
-- 新增真实 CLI 回归，覆盖 HTTP 代理路由、HTTPS `CONNECT` 与 `NO_PROXY`；签名更新、Runtime 预配、Profile 修复和依赖安装继续使用既有的应用全局代理策略。
+- 支持使用 macOS 已信任证书的企业 HTTPS 拦截。原生 reqwest Client 使用 macOS 平台验证器，所有由 XiaoHui 管理的 Node 进程都会通过 `--use-system-ca` 启用系统 CA Store。
+- 分别展示桌面原生链路与运行中 Node Host 的连接结果，包括 `UNKNOWN_ISSUER`、`UNABLE_TO_VERIFY_LEAF_SIGNATURE` 等有界证书错误码，避免一条链路成功掩盖另一条链路失败。
+- 保持证书校验开启，并在证书失败时提示检查 macOS Keychain 中的企业根证书信任。应用全局代理在重启后继续统一覆盖 GPT OAuth Provider、插件、Package 安装、Runtime 预配和签名更新。
 
 当前应用尚未使用 Apple Developer 身份完成代码签名与公证。

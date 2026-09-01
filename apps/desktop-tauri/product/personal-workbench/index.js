@@ -62,7 +62,7 @@ function writeJson(response, status, value) {
   });
   response.end(JSON.stringify(value));
 }
-function createHostNetworkProxyRoute(fetcher = globalThis.fetch) {
+function createHostNetworkProxyRoute(fetcher = globalThis.fetch, environment = process.env, dispatcherInstalled = hasEnvironmentProxyDispatcher()) {
   return {
     kind: "exact",
     path: HOST_NETWORK_PROXY_TEST_PATH,
@@ -76,8 +76,8 @@ function createHostNetworkProxyRoute(fetcher = globalThis.fetch) {
         writeJson(response, 415, { ok: false, error: "application-json-required" });
         return;
       }
-      const result = await testHostNetworkProxy(fetcher);
-      writeJson(response, result.ok ? 200 : 502, result);
+      const result = await testHostNetworkProxy(fetcher, environment, dispatcherInstalled);
+      writeJson(response, 200, result);
     }
   };
 }

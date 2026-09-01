@@ -378,6 +378,7 @@ function buildDesktopBridgeSmokeShell(baseUrl) {
     window.__DSH_LOCALE__ = 'en'
     window.__DSH_CHROME__ = { os: 'macos', titlebar_height: 32, left: [], right: [] }
     window.__XIAOHUI_DESKTOP_COMMANDS__ = []
+    window.__XIAOHUI_NATIVE_PROXY_TEST_RESULT__ = { ok: true, status: 204, proxied: true, errorCode: '' }
     window.__TAURI__ = {
       core: {
         invoke: async (command, args) => {
@@ -385,7 +386,7 @@ function buildDesktopBridgeSmokeShell(baseUrl) {
           if (command === 'open_marketplace_url') return
           if (command === 'check_for_updates') return ${JSON.stringify(desktopUpdateSmokeResult)}
           if (command === 'get_network_proxy_settings') return ${JSON.stringify(desktopProxySnapshot)}
-          if (command === 'test_network_proxy_settings') return { status: 204, proxied: true }
+          if (command === 'test_network_proxy_settings') return window.__XIAOHUI_NATIVE_PROXY_TEST_RESULT__
           if (command === 'save_network_proxy_settings') return {
             ...${JSON.stringify(desktopProxySnapshot)},
             settings: args.settings,
@@ -701,6 +702,7 @@ async function runBrowserSmoke(baseUrl, env) {
     const proxyPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
     const proxyClientResponses = {}
     let hostProxyDiagnosticRequests = 0
+    let hostProxyDiagnosticResult = { ok: true, status: 200, proxied: true, errorCode: '' }
     proxyPage.on('pageerror', error => { pageErrors.push(String(error)) })
     proxyPage.on('console', message => {
       if (message.type() === 'error') consoleErrors.push(message.text())
@@ -721,7 +723,7 @@ async function runBrowserSmoke(baseUrl, env) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ ok: true, status: 200, proxied: true, errorCode: '' }),
+        body: JSON.stringify(hostProxyDiagnosticResult),
       })
     })
     const proxyShellNavigation = await proxyPage.goto(desktopBridge.url, { waitUntil: 'load', timeout: 30_000 })
@@ -747,11 +749,33 @@ async function runBrowserSmoke(baseUrl, env) {
     const embeddedProxyTest = proxySettings.getByRole('button', { name: 'Test ChatGPT connection', exact: true })
     await embeddedProxyTest.click()
     await proxySettings.getByText(
-      'Desktop draft HTTP 204; current Node Host HTTP 200 (environment proxy).',
+      'Desktop draft: HTTP 204 (environment proxy); current Node Host: HTTP 200 (environment proxy).',
       { exact: true },
     ).waitFor({ timeout: 10_000 })
     if (hostProxyDiagnosticRequests !== 1) {
       throw new Error(`desktop proxy test sent ${hostProxyDiagnosticRequests} Node Host diagnostic requests`)
+    }
+    await proxyPage.evaluate(() => {
+      window.__XIAOHUI_NATIVE_PROXY_TEST_RESULT__ = {
+        ok: false,
+        status: 0,
+        proxied: true,
+        errorCode: 'UNKNOWN_ISSUER',
+      }
+    })
+    hostProxyDiagnosticResult = {
+      ok: false,
+      status: 0,
+      proxied: true,
+      errorCode: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    }
+    await embeddedProxyTest.click()
+    await proxySettings.getByText(
+      'Desktop draft: failed: UNKNOWN_ISSUER (environment proxy); current Node Host: failed: UNABLE_TO_VERIFY_LEAF_SIGNATURE (environment proxy). A TLS certificate trust error was detected. Confirm that the enterprise root certificate is trusted in the macOS Keychain; XiaoHui does not disable certificate verification.',
+      { exact: true },
+    ).waitFor({ timeout: 10_000 })
+    if (hostProxyDiagnosticRequests !== 2) {
+      throw new Error(`desktop proxy tests sent ${hostProxyDiagnosticRequests} Node Host diagnostic requests`)
     }
     const embeddedProxySave = proxySettings.getByRole('button', { name: 'Save and restart XiaoHui', exact: true })
     await embeddedProxySave.click()
@@ -762,6 +786,10 @@ async function runBrowserSmoke(baseUrl, env) {
     const proxyCommands = await proxyPage.evaluate(() => window.__XIAOHUI_DESKTOP_COMMANDS__)
     const expectedProxyCommands = [
       { command: 'get_network_proxy_settings' },
+      {
+        command: 'test_network_proxy_settings',
+        args: { settings: desktopProxySystemSettings },
+      },
       {
         command: 'test_network_proxy_settings',
         args: { settings: desktopProxySystemSettings },

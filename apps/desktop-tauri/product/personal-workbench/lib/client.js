@@ -422,7 +422,7 @@ var import_react3 = require("react");
 
 // src/client/desktop-network-proxy.ts
 var DESKTOP_NETWORK_PROXY_CHANNEL = "xiaohui.desktop.network-proxy";
-var DESKTOP_NETWORK_PROXY_VERSION = 1;
+var DESKTOP_NETWORK_PROXY_VERSION = 2;
 var REQUEST_ID_PATTERN2 = /^[A-Za-z0-9_-]{1,64}$/;
 var DEFAULT_HANDSHAKE_TIMEOUT_MS2 = 5e3;
 var MAX_PROXY_URL_LENGTH = 2048;
@@ -472,7 +472,7 @@ function readSnapshot(value) {
   };
 }
 function readTestResult(value) {
-  if (!isRecord(value) || !hasExactKeys(value, "proxied,status") || typeof value.proxied !== "boolean" || !Number.isSafeInteger(value.status) || Number(value.status) < 100 || Number(value.status) > 599) return void 0;
+  if (!isRecord(value) || !hasExactKeys(value, "errorCode,ok,proxied,status") || typeof value.ok !== "boolean" || typeof value.proxied !== "boolean" || !Number.isSafeInteger(value.status) || Number(value.status) < 0 || Number(value.status) > 599 || typeof value.errorCode !== "string" || !/^[A-Z0-9_]{0,64}$/.test(value.errorCode) || value.ok && (Number(value.status) < 100 || value.errorCode !== "") || !value.ok && value.errorCode === "") return void 0;
   return value;
 }
 function readDesktopNetworkProxyResponse(value, requestId, action) {
@@ -613,13 +613,14 @@ function NetworkProxyRow({ t }) {
     setStatus("testing");
     setDetail("");
     try {
-      const native = await requestDesktopNetworkProxyTest(draft);
-      const host = await requestHostNetworkProxyTest();
-      if (!host.ok) throw new Error(`host-network-proxy-test-failed:${host.errorCode}`);
-      const route = host.proxied ? t("proxy.test.route.proxy") : t("proxy.test.route.direct");
+      const [native, host] = await Promise.all([
+        requestDesktopNetworkProxyTest(draft),
+        requestHostNetworkProxyTest()
+      ]);
       const pending = native.proxied === host.proxied ? "" : ` ${t("proxy.test.pending-restart")}`;
-      setDetail(t("proxy.test.success").replace("{nativeStatus}", String(native.status)).replace("{hostStatus}", String(host.status)).replace("{route}", route) + pending);
-      setStatus("tested");
+      const certificateHint = [native.errorCode, host.errorCode].some(isCertificateErrorCode) ? ` ${t("proxy.test.certificate-hint")}` : "";
+      setDetail(t("proxy.test.result").replace("{native}", describeTestResult(native, t)).replace("{host}", describeTestResult(host, t)) + pending + certificateHint);
+      setStatus(native.ok && host.ok ? "tested" : "test-failed");
     } catch (error) {
       setDetail(errorMessage(error));
       setStatus("error");
@@ -753,6 +754,7 @@ function NetworkProxyRow({ t }) {
     status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status", role: "status", children: t("proxy.loading") }),
     status === "testing" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status", role: "status", children: t("proxy.test.testing") }),
     status === "tested" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status dpw-success", role: "status", children: detail }),
+    status === "test-failed" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-error", role: "alert", children: detail }),
     status === "saving" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status", role: "status", children: t("proxy.save.saving") }),
     status === "restarting" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-status", role: "status", children: t("proxy.save.restarting") }),
     status === "error" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dpw-error", role: "alert", children: localizedProxyError(detail, t) }),
@@ -787,6 +789,14 @@ function NetworkProxyRow({ t }) {
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
+function describeTestResult(result, t) {
+  const outcome = result.ok ? t("proxy.test.outcome.http").replace("{status}", String(result.status)) : t("proxy.test.outcome.error").replace("{code}", result.errorCode);
+  const route = result.proxied ? t("proxy.test.route.proxy") : t("proxy.test.route.direct");
+  return t("proxy.test.outcome.routed").replace("{outcome}", outcome).replace("{route}", route);
+}
+function isCertificateErrorCode(code) {
+  return code.includes("CERT") || code.includes("ISSUER") || code.includes("SIGNATURE") || code.includes("VERIFY");
+}
 function localizedProxyError(error, t) {
   if (error === "desktop-shell-unavailable") return t("proxy.shell-unavailable");
   if (error.includes("network-proxy-system-auto-config-unsupported")) return t("proxy.error.pac");
@@ -796,9 +806,6 @@ function localizedProxyError(error, t) {
   if (error.includes("network-proxy-scheme-unsupported")) return t("proxy.error.scheme");
   if (error.includes("network-proxy-url-invalid")) return t("proxy.error.url");
   if (error.includes("network-proxy-no-proxy-invalid")) return t("proxy.error.no-proxy");
-  if (error.includes("host-network-proxy-test-failed:")) {
-    return t("proxy.error.host").replace("{code}", error.split(":").at(-1) ?? "UNKNOWN");
-  }
   if (error.includes("host-network-proxy-response-invalid")) return t("proxy.error.host-response");
   if (error.includes("network-proxy-test")) return t("proxy.error.test");
   return `${t("proxy.error.generic")} ${error}`;
@@ -846,10 +853,14 @@ var zh = {
   "proxy.test.action": "\u6D4B\u8BD5 ChatGPT \u8FDE\u63A5",
   "proxy.test.testing-action": "\u6B63\u5728\u6D4B\u8BD5\u2026",
   "proxy.test.testing": "\u6B63\u5728\u5206\u522B\u6D4B\u8BD5\u5F53\u524D\u8349\u7A3F\u7684\u684C\u9762\u94FE\u8DEF\u4E0E\u6B63\u5728\u8FD0\u884C\u7684 Node Host\u2026",
-  "proxy.test.success": "\u684C\u9762\u8349\u7A3F HTTP {nativeStatus}\uFF1B\u5F53\u524D Node Host HTTP {hostStatus}\uFF08{route}\uFF09\u3002",
+  "proxy.test.result": "\u684C\u9762\u8349\u7A3F\uFF1A{native}\uFF1B\u5F53\u524D Node Host\uFF1A{host}\u3002",
+  "proxy.test.outcome.http": "HTTP {status}",
+  "proxy.test.outcome.error": "\u5931\u8D25\uFF1A{code}",
+  "proxy.test.outcome.routed": "{outcome}\uFF08{route}\uFF09",
   "proxy.test.route.proxy": "\u73AF\u5883\u4EE3\u7406",
   "proxy.test.route.direct": "\u76F4\u8FDE",
   "proxy.test.pending-restart": "Node Host \u4ECD\u5728\u4F7F\u7528\u4E0A\u6B21\u91CD\u542F\u65F6\u7684\u7B56\u7565\uFF1B\u4FDD\u5B58\u5E76\u91CD\u542F\u540E\u8BF7\u518D\u6B21\u6D4B\u8BD5\u3002",
+  "proxy.test.certificate-hint": "\u68C0\u6D4B\u5230 TLS \u8BC1\u4E66\u4FE1\u4EFB\u9519\u8BEF\u3002\u8BF7\u786E\u8BA4\u4F01\u4E1A\u6839\u8BC1\u4E66\u5DF2\u5728 macOS \u94A5\u5319\u4E32\u4E2D\u8BBE\u4E3A\u53D7\u4FE1\u4EFB\uFF1BXiaoHui \u4E0D\u4F1A\u5173\u95ED\u8BC1\u4E66\u6821\u9A8C\u3002",
   "proxy.save.action": "\u4FDD\u5B58\u5E76\u91CD\u542F XiaoHui",
   "proxy.save.saving": "\u6B63\u5728\u4FDD\u5B58\u7F51\u7EDC\u4EE3\u7406\u8BBE\u7F6E\u2026",
   "proxy.save.restarting-action": "\u6B63\u5728\u91CD\u542F\u2026",
@@ -861,8 +872,7 @@ var zh = {
   "proxy.error.scheme": "\u4EE3\u7406\u5730\u5740\u4EC5\u652F\u6301 http:// \u6216 https://\u3002",
   "proxy.error.url": "\u4EE3\u7406\u5730\u5740\u65E0\u6548\uFF0C\u4E14\u4E0D\u80FD\u5305\u542B\u8D26\u53F7\u3001\u5BC6\u7801\u3001\u8DEF\u5F84\u3001\u67E5\u8BE2\u53C2\u6570\u6216\u7247\u6BB5\u3002",
   "proxy.error.no-proxy": "\u4E0D\u4F7F\u7528\u4EE3\u7406\u7684\u5730\u5740\u5217\u8868\u65E0\u6548\u3002",
-  "proxy.error.test": "\u65E0\u6CD5\u901A\u8FC7\u5F53\u524D\u8BBE\u7F6E\u8FDE\u63A5 ChatGPT\uFF0C\u8BF7\u786E\u8BA4\u4EE3\u7406\u6B63\u5728\u8FD0\u884C\u3002",
-  "proxy.error.host": "\u684C\u9762\u94FE\u8DEF\u53EF\u8FBE\uFF0C\u4F46\u5F53\u524D Node Host \u8FDE\u63A5\u5931\u8D25\uFF08{code}\uFF09\u3002\u4FDD\u5B58\u5E76\u91CD\u542F\u540E\u82E5\u4ECD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5 Host \u4EE3\u7406\u521D\u59CB\u5316\u3002",
+  "proxy.error.test": "\u684C\u9762\u8FDE\u901A\u6027\u6D4B\u8BD5\u672A\u5B8C\u6210\uFF0C\u8BF7\u68C0\u67E5\u663E\u793A\u7684\u9519\u8BEF\u4FE1\u606F\u540E\u91CD\u8BD5\u3002",
   "proxy.error.host-response": "Node Host \u8FD4\u56DE\u4E86\u65E0\u6548\u7684\u4EE3\u7406\u8BCA\u65AD\u7ED3\u679C\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00 XiaoHui \u540E\u91CD\u8BD5\u3002",
   "proxy.error.generic": "\u7F51\u7EDC\u4EE3\u7406\u64CD\u4F5C\u5931\u8D25\uFF1A",
   "lifecycle.title": "\u5E94\u7528\u751F\u547D\u5468\u671F",
@@ -919,10 +929,14 @@ var en = {
   "proxy.test.action": "Test ChatGPT connection",
   "proxy.test.testing-action": "Testing\u2026",
   "proxy.test.testing": "Testing the desktop draft route and the running Node Host separately\u2026",
-  "proxy.test.success": "Desktop draft HTTP {nativeStatus}; current Node Host HTTP {hostStatus} ({route}).",
+  "proxy.test.result": "Desktop draft: {native}; current Node Host: {host}.",
+  "proxy.test.outcome.http": "HTTP {status}",
+  "proxy.test.outcome.error": "failed: {code}",
+  "proxy.test.outcome.routed": "{outcome} ({route})",
   "proxy.test.route.proxy": "environment proxy",
   "proxy.test.route.direct": "direct",
   "proxy.test.pending-restart": "The Node Host is still using the policy from the last restart. Save, restart, and test again.",
+  "proxy.test.certificate-hint": "A TLS certificate trust error was detected. Confirm that the enterprise root certificate is trusted in the macOS Keychain; XiaoHui does not disable certificate verification.",
   "proxy.save.action": "Save and restart XiaoHui",
   "proxy.save.saving": "Saving network proxy settings\u2026",
   "proxy.save.restarting-action": "Restarting\u2026",
@@ -934,8 +948,7 @@ var en = {
   "proxy.error.scheme": "Proxy URLs support only http:// or https://.",
   "proxy.error.url": "The proxy URL is invalid and cannot contain a username, password, path, query, or fragment.",
   "proxy.error.no-proxy": "The proxy bypass list is invalid.",
-  "proxy.error.test": "Could not connect to ChatGPT with these settings. Confirm that the proxy is running.",
-  "proxy.error.host": "The desktop route is reachable, but the current Node Host failed ({code}). If this continues after saving and restarting, check Host proxy initialization.",
+  "proxy.error.test": "The desktop connectivity test did not complete. Check the reported error and try again.",
   "proxy.error.host-response": "The Node Host returned an invalid proxy diagnostic result. Reopen XiaoHui and try again.",
   "proxy.error.generic": "Network proxy operation failed:",
   "lifecycle.title": "Application lifecycle",

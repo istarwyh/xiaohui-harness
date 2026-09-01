@@ -128,8 +128,9 @@ describe('desktop network proxy browser bridge', () => {
       settings,
     })
     target.emit(accepted('test', 'proxy_test_1'))
-    target.emit(response('test', 'proxy_test_1', { status: 200, proxied: true }))
-    await expect(testResult).resolves.toEqual({ status: 200, proxied: true })
+    const nativeResult = { ok: true, status: 200, proxied: true, errorCode: '' }
+    target.emit(response('test', 'proxy_test_1', nativeResult))
+    await expect(testResult).resolves.toEqual(nativeResult)
 
     const saved = requestDesktopNetworkProxySave(settings, {
       target: target as unknown as Window,
@@ -149,16 +150,41 @@ describe('desktop network proxy browser bridge', () => {
       handshakeTimeoutMs: 20,
     })
     target.emit(accepted('test', 'proxy_test_1'), {})
-    target.emit(response('test', 'proxy_test_1', { status: 999, proxied: true }))
+    target.emit(response('test', 'proxy_test_1', {
+      ok: false,
+      status: 999,
+      proxied: true,
+      errorCode: 'UNKNOWN_ISSUER',
+    }))
     await expect(result).rejects.toThrow('desktop-shell-unavailable')
   })
 
   it('accepts only a response with the action-specific value', () => {
     expect(readDesktopNetworkProxyResponse(
-      response('test', 'proxy_1', { status: 204, proxied: true }),
+      response('test', 'proxy_1', { ok: true, status: 204, proxied: true, errorCode: '' }),
       'proxy_1',
       'test',
     )).toMatchObject({ ok: true })
+    expect(readDesktopNetworkProxyResponse(
+      response('test', 'proxy_1', {
+        ok: false,
+        status: 0,
+        proxied: true,
+        errorCode: 'UNKNOWN_ISSUER',
+      }),
+      'proxy_1',
+      'test',
+    )).toMatchObject({ ok: true })
+    expect(readDesktopNetworkProxyResponse(
+      response('test', 'proxy_1', {
+        ok: false,
+        status: 0,
+        proxied: true,
+        errorCode: 'private certificate detail',
+      }),
+      'proxy_1',
+      'test',
+    )).toBeUndefined()
     expect(readDesktopNetworkProxyResponse(
       response('test', 'proxy_1', snapshot),
       'proxy_1',

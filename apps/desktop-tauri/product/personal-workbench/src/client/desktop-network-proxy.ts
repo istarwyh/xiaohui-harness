@@ -4,7 +4,7 @@
 export const DESKTOP_NETWORK_PROXY_CHANNEL = 'xiaohui.desktop.network-proxy'
 
 /** Current browser-to-shell protocol version. */
-export const DESKTOP_NETWORK_PROXY_VERSION = 1
+export const DESKTOP_NETWORK_PROXY_VERSION = 2
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
@@ -46,8 +46,10 @@ export interface NetworkProxySnapshot {
 
 /** Result of one ChatGPT reachability check. */
 export interface NetworkProxyTestResult {
+  ok: boolean
   status: number
   proxied: boolean
+  errorCode: string
 }
 
 type DesktopNetworkProxyAction = 'get' | 'test' | 'save'
@@ -167,11 +169,16 @@ function readSnapshot(value: unknown): NetworkProxySnapshot | undefined {
 
 function readTestResult(value: unknown): NetworkProxyTestResult | undefined {
   if (!isRecord(value)
-    || !hasExactKeys(value, 'proxied,status')
+    || !hasExactKeys(value, 'errorCode,ok,proxied,status')
+    || typeof value.ok !== 'boolean'
     || typeof value.proxied !== 'boolean'
     || !Number.isSafeInteger(value.status)
-    || Number(value.status) < 100
-    || Number(value.status) > 599) return undefined
+    || Number(value.status) < 0
+    || Number(value.status) > 599
+    || typeof value.errorCode !== 'string'
+    || !/^[A-Z0-9_]{0,64}$/.test(value.errorCode)
+    || (value.ok && (Number(value.status) < 100 || value.errorCode !== ''))
+    || (!value.ok && value.errorCode === '')) return undefined
   return value as unknown as NetworkProxyTestResult
 }
 

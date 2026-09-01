@@ -1,10 +1,13 @@
 //! Application-wide proxy policy for native requests and the private DSH Host.
 
 use std::collections::HashSet;
+use std::error::Error as StdError;
 use std::process::Command;
 use std::time::Duration;
 
 use reqwest::{ClientBuilder, NoProxy, Proxy};
+use rustls::{CertificateError, ClientConfig};
+use rustls_platform_verifier::ConfigVerifierExt;
 use serde::{Deserialize, Serialize};
 use tauri_plugin_updater::UpdaterBuilder;
 use url::Url;
@@ -17,7 +20,7 @@ const PROXY_TEST_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_PROXY_URL_LENGTH: usize = 2_048;
 const MAX_NO_PROXY_LENGTH: usize = 4_096;
 const LOCAL_BYPASS: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
-const PROXY_ENV_NAMES: [&str; 9] = [
+const CHILD_NETWORK_ENV_NAMES: [&str; 10] = [
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "ALL_PROXY",
@@ -27,7 +30,9 @@ const PROXY_ENV_NAMES: [&str; 9] = [
     "all_proxy",
     "no_proxy",
     "NODE_USE_ENV_PROXY",
+    "NODE_OPTIONS",
 ];
+const NODE_SYSTEM_CA_OPTION: &str = "--use-system-ca";
 
 /// User-selected source of the application's outbound proxy configuration.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -102,8 +107,10 @@ pub struct NetworkProxySnapshot {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkProxyTestResult {
+    pub ok: bool,
     pub status: u16,
     pub proxied: bool,
+    pub error_code: String,
 }
 
 impl ResolvedNetworkProxy {
@@ -228,11 +235,12 @@ fn normalize_no_proxy(raw: &str) -> Result<String, String> {
     Ok(values.join(","))
 }
 
-/// Apply a resolved policy to one child process after removing ambient proxy variables.
+/// Apply system CA trust and a resolved proxy policy after removing ambient network options.
 pub fn apply_to_command(command: &mut Command, proxy: &ResolvedNetworkProxy) {
-    for name in PROXY_ENV_NAMES {
+    for name in CHILD_NETWORK_ENV_NAMES {
         command.env_remove(name);
     }
+    command.env("NODE_OPTIONS", NODE_SYSTEM_CA_OPTION);
     let Some(http_proxy) = proxy.http_proxy.as_ref() else {
         if let Some(https_proxy) = proxy.https_proxy.as_ref() {
             set_proxy_env(command, "HTTPS_PROXY", "https_proxy", https_proxy.as_str());
@@ -252,10 +260,11 @@ pub fn apply_to_command(command: &mut Command, proxy: &ResolvedNetworkProxy) {
 /// Arguments that replace ambient proxy variables through WSL `/usr/bin/env`.
 pub fn env_arguments(proxy: &ResolvedNetworkProxy) -> Vec<String> {
     let mut assignments = Vec::new();
-    for name in PROXY_ENV_NAMES {
+    for name in CHILD_NETWORK_ENV_NAMES {
         assignments.push("-u".into());
         assignments.push(name.into());
     }
+    assignments.push(format!("NODE_OPTIONS={NODE_SYSTEM_CA_OPTION}"));
     if let Some(url) = &proxy.http_proxy {
         assignments.push(format!("HTTP_PROXY={}", url.as_str()));
         assignments.push(format!("http_proxy={}", url.as_str()));
@@ -285,17 +294,19 @@ pub fn apply_to_client(
     mut builder: ClientBuilder,
     proxy: &ResolvedNetworkProxy,
 ) -> Result<ClientBuilder, String> {
-    builder = builder.no_proxy();
+    let tls = ClientConfig::with_platform_verifier()
+        .map_err(|_| "network-proxy-platform-verifier-init-failed".to_string())?;
+    builder = builder.use_preconfigured_tls(tls).no_proxy();
     let no_proxy = NoProxy::from_string(&proxy.no_proxy);
     if let Some(url) = &proxy.http_proxy {
         let configured = Proxy::http(url.as_str())
-            .map_err(|error| error.to_string())?
+            .map_err(|_| "network-proxy-client-config-invalid".to_string())?
             .no_proxy(no_proxy.clone());
         builder = builder.proxy(configured);
     }
     if let Some(url) = &proxy.https_proxy {
         let configured = Proxy::https(url.as_str())
-            .map_err(|error| error.to_string())?
+            .map_err(|_| "network-proxy-client-config-invalid".to_string())?
             .no_proxy(no_proxy);
         builder = builder.proxy(configured);
     }
@@ -339,28 +350,89 @@ pub async fn test_network_proxy_settings(
     settings: NetworkProxySettings,
 ) -> Result<NetworkProxyTestResult, String> {
     let proxy = resolve(&settings)?;
-    let client = apply_to_client(
+    let client = match apply_to_client(
         reqwest::Client::builder()
             .user_agent("XiaoHui-Harness/proxy-test")
             .timeout(PROXY_TEST_TIMEOUT)
             .redirect(reqwest::redirect::Policy::limited(3)),
         &proxy,
-    )?
-    .build()
-    .map_err(|error| format!("network-proxy-test-client:{error}"))?;
-    let response = client
-        .get(PROXY_TEST_URL)
-        .send()
-        .await
-        .map_err(|error| format!("network-proxy-test-failed:{error}"))?;
+    ) {
+        Ok(builder) => match builder.build() {
+            Ok(client) => client,
+            Err(_) => return Ok(failed_test_result(&proxy, 0, "CLIENT_BUILD_FAILED")),
+        },
+        Err(_) => return Ok(failed_test_result(&proxy, 0, "PLATFORM_TRUST_INIT_FAILED")),
+    };
+    let response = match client.get(PROXY_TEST_URL).send().await {
+        Ok(response) => response,
+        Err(error) => return Ok(failed_test_result(&proxy, 0, reqwest_error_code(&error))),
+    };
     let status = response.status();
     if status.as_u16() == 407 || status.is_server_error() {
-        return Err(format!("network-proxy-test-http:{}", status.as_u16()));
+        return Ok(failed_test_result(
+            &proxy,
+            status.as_u16(),
+            &format!("HTTP_{}", status.as_u16()),
+        ));
     }
     Ok(NetworkProxyTestResult {
+        ok: true,
         status: status.as_u16(),
         proxied: proxy.is_proxied(),
+        error_code: String::new(),
     })
+}
+
+fn failed_test_result(
+    proxy: &ResolvedNetworkProxy,
+    status: u16,
+    error_code: &str,
+) -> NetworkProxyTestResult {
+    NetworkProxyTestResult {
+        ok: false,
+        status,
+        proxied: proxy.is_proxied(),
+        error_code: error_code.to_string(),
+    }
+}
+
+fn reqwest_error_code(error: &reqwest::Error) -> &'static str {
+    let mut current: Option<&(dyn StdError + 'static)> = Some(error);
+    while let Some(source) = current {
+        if let Some(tls_error) = source.downcast_ref::<rustls::Error>() {
+            return rustls_error_code(tls_error);
+        }
+        current = source.source();
+    }
+    if error.is_timeout() {
+        "REQUEST_TIMEOUT"
+    } else if error.is_connect() {
+        "CONNECT_FAILED"
+    } else {
+        "REQUEST_FAILED"
+    }
+}
+
+fn rustls_error_code(error: &rustls::Error) -> &'static str {
+    let rustls::Error::InvalidCertificate(certificate) = error else {
+        return "TLS_HANDSHAKE_FAILED";
+    };
+    match certificate {
+        CertificateError::BadEncoding => "CERTIFICATE_BAD_ENCODING",
+        CertificateError::Expired | CertificateError::ExpiredContext { .. } => {
+            "CERTIFICATE_EXPIRED"
+        }
+        CertificateError::NotValidYet | CertificateError::NotValidYetContext { .. } => {
+            "CERTIFICATE_NOT_YET_VALID"
+        }
+        CertificateError::Revoked => "CERTIFICATE_REVOKED",
+        CertificateError::UnknownIssuer => "UNKNOWN_ISSUER",
+        CertificateError::BadSignature => "CERTIFICATE_BAD_SIGNATURE",
+        CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. } => {
+            "CERTIFICATE_NAME_MISMATCH"
+        }
+        _ => "CERTIFICATE_INVALID",
+    }
 }
 
 fn snapshot(settings: NetworkProxySettings) -> NetworkProxySnapshot {
@@ -528,10 +600,10 @@ fn system_endpoint(
     Ok(value)
 }
 
-/// Log only mode and endpoint presence; proxy addresses can contain private hostnames.
+/// Log only mode, endpoint presence, and fixed trust behavior; proxy addresses can contain private hostnames.
 pub fn log_active(proxy: &ResolvedNetworkProxy) {
     boot_log::info(&format!(
-        "network proxy active mode={:?} http={} https={}",
+        "network proxy active mode={:?} http={} https={} nativeSystemTrust=true nodeSystemCa=true",
         proxy.mode,
         proxy.http_proxy.is_some(),
         proxy.https_proxy.is_some()
@@ -542,8 +614,11 @@ pub fn log_active(proxy: &ResolvedNetworkProxy) {
 mod tests {
     use std::process::Command;
 
+    use rustls::CertificateError;
+
     use super::{
-        apply_to_command, parse_scutil_proxy, resolve, NetworkProxyMode, NetworkProxySettings,
+        apply_to_client, apply_to_command, parse_scutil_proxy, resolve, rustls_error_code,
+        NetworkProxyMode, NetworkProxySettings,
     };
 
     fn custom() -> NetworkProxySettings {
@@ -633,6 +708,7 @@ mod tests {
         let mut direct_command = Command::new("node");
         direct_command.env("HTTP_PROXY", "http://ambient.invalid:1");
         direct_command.env("ALL_PROXY", "socks5://ambient.invalid:2");
+        direct_command.env("NODE_OPTIONS", "--require=/tmp/ambient.cjs");
         apply_to_command(
             &mut direct_command,
             &resolve(&NetworkProxySettings::default()).unwrap(),
@@ -644,6 +720,9 @@ mod tests {
         assert!(direct_env
             .iter()
             .any(|(name, value)| *name == "ALL_PROXY" && value.is_none()));
+        assert!(direct_env.iter().any(|(name, value)| {
+            *name == "NODE_OPTIONS" && value.is_some_and(|value| value == "--use-system-ca")
+        }));
 
         let mut proxied_command = Command::new("node");
         apply_to_command(&mut proxied_command, &resolve(&custom()).unwrap());
@@ -655,5 +734,35 @@ mod tests {
             *name == "NO_PROXY"
                 && value.is_some_and(|value| value.to_string_lossy().contains("localhost"))
         }));
+    }
+
+    #[test]
+    fn native_clients_accept_the_platform_certificate_verifier() {
+        let builder = apply_to_client(
+            reqwest::Client::builder(),
+            &resolve(&NetworkProxySettings::default()).unwrap(),
+        )
+        .unwrap();
+        builder.build().unwrap();
+    }
+
+    #[test]
+    fn certificate_diagnostics_return_only_bounded_codes() {
+        assert_eq!(
+            rustls_error_code(&rustls::Error::InvalidCertificate(
+                CertificateError::UnknownIssuer,
+            )),
+            "UNKNOWN_ISSUER"
+        );
+        assert_eq!(
+            rustls_error_code(&rustls::Error::InvalidCertificate(
+                CertificateError::NotValidForName,
+            )),
+            "CERTIFICATE_NAME_MISMATCH"
+        );
+        assert_eq!(
+            rustls_error_code(&rustls::Error::General("private detail".into())),
+            "TLS_HANDSHAKE_FAILED"
+        );
     }
 }

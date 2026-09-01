@@ -88,6 +88,29 @@ describe('Personal Workbench Host network proxy diagnostic', () => {
     expect(JSON.stringify(result)).not.toContain('proxy-password')
   })
 
+  it('preserves a bounded certificate cause without exposing its message', async () => {
+    const fetcher: HostNetworkProxyFetch = async () => {
+      throw new TypeError('fetch failed for an account-specific endpoint', {
+        cause: Object.assign(new Error('certificate contained private details'), {
+          code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+        }),
+      })
+    }
+    const result = await testHostNetworkProxy(
+      fetcher,
+      { HTTPS_PROXY: 'http://127.0.0.1:7890' },
+      true,
+    )
+    expect(result).toEqual({
+      ok: false,
+      status: 0,
+      proxied: true,
+      errorCode: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    })
+    expect(JSON.stringify(result)).not.toContain('account-specific')
+    expect(JSON.stringify(result)).not.toContain('private details')
+  })
+
   it('fails before fetch when proxy variables exist without CLI dispatcher proof', async () => {
     const fetcher: HostNetworkProxyFetch = async () => {
       throw new Error('fetch must not run')
@@ -105,7 +128,7 @@ describe('Personal Workbench Host network proxy diagnostic', () => {
   })
 
   it('rejects cross-site simple requests and serves the fixed JSON POST', async () => {
-    const route = createHostNetworkProxyRoute(async () => ({ status: 200 }))
+    const route = createHostNetworkProxyRoute(async () => ({ status: 200 }), {}, false)
     await expect(invokeRoute(route, 'GET')).resolves.toEqual({
       body: { ok: false, error: 'method-not-allowed' },
       status: 405,
@@ -116,6 +139,23 @@ describe('Personal Workbench Host network proxy diagnostic', () => {
     })
     await expect(invokeRoute(route, 'POST', 'application/json; charset=utf-8')).resolves.toEqual({
       body: { ok: true, status: 200, proxied: false, errorCode: '' },
+      status: 200,
+    })
+  })
+
+  it('returns a completed failed diagnostic without an HTTP transport failure', async () => {
+    const route = createHostNetworkProxyRoute(async () => {
+      throw Object.assign(new Error('private certificate detail'), {
+        code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+      })
+    }, { HTTPS_PROXY: 'http://127.0.0.1:7890' }, true)
+    await expect(invokeRoute(route, 'POST', 'application/json')).resolves.toEqual({
+      body: {
+        ok: false,
+        status: 0,
+        proxied: true,
+        errorCode: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+      },
       status: 200,
     })
   })

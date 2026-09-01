@@ -12,6 +12,7 @@ import {
   type NetworkProxyMode,
   type NetworkProxySettings,
   type NetworkProxySnapshot,
+  type NetworkProxyTestResult,
 } from './desktop-network-proxy.ts'
 import { requestDesktopRestart } from './desktop-lifecycle.ts'
 import { requestHostNetworkProxyTest } from './host-network-proxy.ts'
@@ -20,7 +21,7 @@ import { requestHostNetworkProxyTest } from './host-network-proxy.ts'
 export type NetworkProxyRowProps =
   PropsRuntime<'settings.general.item'> & PropsLocale<'settings.personal-workbench'>
 
-type ProxyStatus = 'loading' | 'idle' | 'refreshing' | 'testing' | 'tested' | 'saving' | 'restarting' | 'error'
+type ProxyStatus = 'loading' | 'idle' | 'refreshing' | 'testing' | 'tested' | 'test-failed' | 'saving' | 'restarting' | 'error'
 
 const EMPTY_SETTINGS: NetworkProxySettings = {
   mode: 'direct',
@@ -72,16 +73,18 @@ export function NetworkProxyRow({ t }: NetworkProxyRowProps) {
     setStatus('testing')
     setDetail('')
     try {
-      const native = await requestDesktopNetworkProxyTest(draft)
-      const host = await requestHostNetworkProxyTest()
-      if (!host.ok) throw new Error(`host-network-proxy-test-failed:${host.errorCode}`)
-      const route = host.proxied ? t('proxy.test.route.proxy') : t('proxy.test.route.direct')
+      const [native, host] = await Promise.all([
+        requestDesktopNetworkProxyTest(draft),
+        requestHostNetworkProxyTest(),
+      ])
       const pending = native.proxied === host.proxied ? '' : ` ${t('proxy.test.pending-restart')}`
-      setDetail(t('proxy.test.success')
-        .replace('{nativeStatus}', String(native.status))
-        .replace('{hostStatus}', String(host.status))
-        .replace('{route}', route) + pending)
-      setStatus('tested')
+      const certificateHint = [native.errorCode, host.errorCode].some(isCertificateErrorCode)
+        ? ` ${t('proxy.test.certificate-hint')}`
+        : ''
+      setDetail(t('proxy.test.result')
+        .replace('{native}', describeTestResult(native, t))
+        .replace('{host}', describeTestResult(host, t)) + pending + certificateHint)
+      setStatus(native.ok && host.ok ? 'tested' : 'test-failed')
     }
     catch (error) {
       setDetail(errorMessage(error))
@@ -222,6 +225,7 @@ export function NetworkProxyRow({ t }: NetworkProxyRowProps) {
           {detail}
         </div>
       )}
+      {status === 'test-failed' && <div className="dpw-error" role="alert">{detail}</div>}
       {status === 'saving' && <div className="dpw-status" role="status">{t('proxy.save.saving')}</div>}
       {status === 'restarting' && <div className="dpw-status" role="status">{t('proxy.save.restarting')}</div>}
       {status === 'error' && (
@@ -256,6 +260,26 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function describeTestResult(
+  result: NetworkProxyTestResult,
+  t: NetworkProxyRowProps['t'],
+): string {
+  const outcome = result.ok
+    ? t('proxy.test.outcome.http').replace('{status}', String(result.status))
+    : t('proxy.test.outcome.error').replace('{code}', result.errorCode)
+  const route = result.proxied ? t('proxy.test.route.proxy') : t('proxy.test.route.direct')
+  return t('proxy.test.outcome.routed')
+    .replace('{outcome}', outcome)
+    .replace('{route}', route)
+}
+
+function isCertificateErrorCode(code: string): boolean {
+  return code.includes('CERT')
+    || code.includes('ISSUER')
+    || code.includes('SIGNATURE')
+    || code.includes('VERIFY')
+}
+
 function localizedProxyError(error: string, t: NetworkProxyRowProps['t']): string {
   if (error === 'desktop-shell-unavailable') return t('proxy.shell-unavailable')
   if (error.includes('network-proxy-system-auto-config-unsupported')) return t('proxy.error.pac')
@@ -265,9 +289,6 @@ function localizedProxyError(error: string, t: NetworkProxyRowProps['t']): strin
   if (error.includes('network-proxy-scheme-unsupported')) return t('proxy.error.scheme')
   if (error.includes('network-proxy-url-invalid')) return t('proxy.error.url')
   if (error.includes('network-proxy-no-proxy-invalid')) return t('proxy.error.no-proxy')
-  if (error.includes('host-network-proxy-test-failed:')) {
-    return t('proxy.error.host').replace('{code}', error.split(':').at(-1) ?? 'UNKNOWN')
-  }
   if (error.includes('host-network-proxy-response-invalid')) return t('proxy.error.host-response')
   if (error.includes('network-proxy-test')) return t('proxy.error.test')
   return `${t('proxy.error.generic')} ${error}`

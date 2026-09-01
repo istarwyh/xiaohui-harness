@@ -20,7 +20,7 @@ const validators = Function(
   'marketplaceLinkChannel',
   'marketplaceLinkVersion',
   `${validatorSource}; return { readDesktopLifecycleAction, readNetworkProxyAction, isMarketplaceLinkRequest }`,
-)('xiaohui.desktop.lifecycle', 1, /^[A-Za-z0-9_-]{1,64}$/, 'xiaohui.desktop.network-proxy', 1, 'xiaohui.desktop.marketplace-link', 1)
+)('xiaohui.desktop.lifecycle', 1, /^[A-Za-z0-9_-]{1,64}$/, 'xiaohui.desktop.network-proxy', 2, 'xiaohui.desktop.marketplace-link', 1)
 
 test('desktop shell accepts only fixed lifecycle request fields and actions', () => {
   const request = {
@@ -72,7 +72,7 @@ test('desktop shell accepts only fixed network proxy requests and bounded settin
   }
   const request = {
     channel: 'xiaohui.desktop.network-proxy',
-    version: 1,
+    version: 2,
     type: 'test-request',
     requestId: 'proxy_1',
     settings,
@@ -81,7 +81,7 @@ test('desktop shell accepts only fixed network proxy requests and bounded settin
   assert.equal(validators.readNetworkProxyAction({ ...request, type: 'save-request' }), 'save')
   assert.equal(validators.readNetworkProxyAction({
     channel: request.channel,
-    version: 1,
+    version: 2,
     type: 'get-request',
     requestId: request.requestId,
   }), 'get')

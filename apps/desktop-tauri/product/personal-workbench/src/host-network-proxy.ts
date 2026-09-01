@@ -103,10 +103,14 @@ function writeJson(
  * Create the same-origin POST route that exercises the current Host realm.
  * The JSON media type forces cross-origin browsers through CORS preflight.
  * @param fetcher - Host fetch implementation, replaced only by deterministic tests.
+ * @param environment - Host environment, replaced only by deterministic tests.
+ * @param dispatcherInstalled - dispatcher proof, replaced only by deterministic tests.
  * @returns one exact WebServer route.
  */
 export function createHostNetworkProxyRoute(
   fetcher: HostNetworkProxyFetch = globalThis.fetch,
+  environment: NodeJS.ProcessEnv = process.env,
+  dispatcherInstalled: boolean = hasEnvironmentProxyDispatcher(),
 ): WebRoute {
   return {
     kind: 'exact',
@@ -121,8 +125,8 @@ export function createHostNetworkProxyRoute(
         writeJson(response, 415, { ok: false, error: 'application-json-required' })
         return
       }
-      const result = await testHostNetworkProxy(fetcher)
-      writeJson(response, result.ok ? 200 : 502, result)
+      const result = await testHostNetworkProxy(fetcher, environment, dispatcherInstalled)
+      writeJson(response, 200, result)
     },
   }
 }
