@@ -61,6 +61,7 @@ const validMarketplaceRepository = 'verified-plugin-repository'
 const validMarketplacePackage = '@xiaohui-test/verified-plugin'
 const missingMarketplacePackage = '@xiaohui-test/repository-sdk'
 const validMarketplaceNonPluginPackage = '@xiaohui-test/verified-sdk'
+const desktopExternalLinkSmokeUrl = 'https://github.com/gitroomhq/postiz-app'
 const syntheticInstallFailure = 'synthetic install failure'
 const syntheticHostProxy = 'http://127.0.0.1:9'
 
@@ -383,6 +384,7 @@ function buildDesktopBridgeSmokeShell(baseUrl) {
       core: {
         invoke: async (command, args) => {
           window.__XIAOHUI_DESKTOP_COMMANDS__.push({ command, args })
+          if (command === 'open_external_url') return
           if (command === 'open_marketplace_url') return
           if (command === 'check_for_updates') return ${JSON.stringify(desktopUpdateSmokeResult)}
           if (command === 'get_network_proxy_settings') return ${JSON.stringify(desktopProxySnapshot)}
@@ -469,6 +471,15 @@ async function runBrowserSmoke(baseUrl, env) {
       executablePath: installedChromiumExecutable,
     })
     const page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
+    await page.addInitScript(() => {
+      window.__XIAOHUI_COPIED_LINKS__ = []
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: async value => { window.__XIAOHUI_COPIED_LINKS__.push(value) },
+        },
+      })
+    })
     const pageErrors = []
     const consoleErrors = []
     const clientResponses = {}
@@ -644,6 +655,37 @@ async function runBrowserSmoke(baseUrl, env) {
       )
     }
     await completeProductOnboarding(embedded)
+    const externalLink = embedded.locator('#xiaohui-external-link-smoke')
+    await embedded.locator('body').evaluate((body, url) => {
+      const anchor = document.createElement('a')
+      anchor.id = 'xiaohui-external-link-smoke'
+      anchor.href = url
+      anchor.target = '_blank'
+      anchor.rel = 'noopener noreferrer'
+      anchor.textContent = 'Postiz external link smoke'
+      anchor.style.cssText = 'position:fixed;left:300px;top:120px;z-index:2147483646;padding:8px;background:white;color:blue'
+      body.append(anchor)
+    }, desktopExternalLinkSmokeUrl)
+    await externalLink.hover()
+    if (await externalLink.getAttribute('title') !== desktopExternalLinkSmokeUrl) {
+      throw new Error('desktop Markdown external link did not expose its destination on hover')
+    }
+    await externalLink.click({ button: 'right' })
+    await embedded.getByRole('menuitem', { name: 'Copy link address', exact: true }).click()
+    await embedded.getByText('Link address copied', { exact: true }).waitFor({ timeout: 10_000 })
+    const copiedLinks = await embedded.locator('body').evaluate(() => window.__XIAOHUI_COPIED_LINKS__)
+    if (JSON.stringify(copiedLinks) !== JSON.stringify([desktopExternalLinkSmokeUrl])) {
+      throw new Error(`desktop link menu copied unexpected destinations: ${JSON.stringify(copiedLinks)}`)
+    }
+    await page.keyboard.press('Escape')
+    await externalLink.click()
+    await page.waitForFunction(
+      url => window.__XIAOHUI_DESKTOP_COMMANDS__?.some(
+        entry => entry.command === 'open_external_url' && entry.args?.url === url,
+      ) === true,
+      desktopExternalLinkSmokeUrl,
+      { timeout: 10_000 },
+    )
     await embedded.getByRole('button', { name: 'Settings', exact: true }).click()
     const embeddedSettings = embedded.getByRole('dialog', { name: 'Settings' })
     await embeddedSettings.waitFor({ timeout: 10_000 })
@@ -675,6 +717,10 @@ async function runBrowserSmoke(baseUrl, env) {
     )
     const lifecycleCommands = await page.evaluate(() => window.__XIAOHUI_DESKTOP_COMMANDS__)
     const expectedLifecycleCommands = [
+      {
+        command: 'open_external_url',
+        args: { url: desktopExternalLinkSmokeUrl },
+      },
       { command: 'get_network_proxy_settings' },
       {
         command: 'open_marketplace_url',
@@ -1018,7 +1064,7 @@ export async function verifyPreparedProduct(root = harnessRoot, productRuntimeRo
     run(join(productRuntimeRoot, 'venv', 'bin', 'harbor'), ['--version'], { cwd: commandWorld, env })
     run(join(productRuntimeRoot, 'venv', 'bin', 'harbor-dsh'), ['--help'], { cwd: commandWorld, env })
     await runHostSmoke(root, productRuntimeRoot)
-    console.log(`verify-product-release: ${installedPeers} bundled runtime peer links, ${PRODUCT_CLIENT_IDS.length} assembled Client plugins, the Plugin Marketplace, Network proxy, and Application lifecycle controls passed`)
+    console.log(`verify-product-release: ${installedPeers} bundled runtime peer links, ${PRODUCT_CLIENT_IDS.length} assembled Client plugins, external links, Plugin Marketplace, Network proxy, and Application lifecycle controls passed`)
   }
   finally {
     removeWorkspaceInstallState(root)

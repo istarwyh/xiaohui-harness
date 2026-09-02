@@ -297,6 +297,8 @@
     const desktopLifecycleRequestId = /^[A-Za-z0-9_-]{1,64}$/
     const networkProxyChannel = 'xiaohui.desktop.network-proxy'
     const networkProxyVersion = 2
+    const externalLinkChannel = 'xiaohui.desktop.external-link'
+    const externalLinkVersion = 1
     const marketplaceLinkChannel = 'xiaohui.desktop.marketplace-link'
     const marketplaceLinkVersion = 1
     let embeddedOrigin
@@ -375,6 +377,34 @@
       return segments.length === 3 && /^@[A-Za-z0-9_.-]+$/.test(segments[1]) && validSegment(segments[2])
     }
 
+    function isExternalHttpUrl(value) {
+      if (typeof value !== 'string' || value.length === 0 || value.length > 4096) return false
+      let url
+      try {
+        url = new URL(value)
+      }
+      catch {
+        return false
+      }
+      return ['http:', 'https:'].includes(url.protocol)
+        && url.hostname !== ''
+        && url.username === ''
+        && url.password === ''
+        && url.href.length <= 4096
+    }
+
+    function isExternalLinkRequest(value) {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+      const keys = Object.keys(value).sort()
+      if (keys.join(',') !== 'channel,requestId,type,url,version') return false
+      return value.channel === externalLinkChannel
+        && value.version === externalLinkVersion
+        && value.type === 'open-request'
+        && typeof value.requestId === 'string'
+        && desktopLifecycleRequestId.test(value.requestId)
+        && isExternalHttpUrl(value.url)
+    }
+
     function isMarketplaceLinkRequest(value) {
       if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
       const keys = Object.keys(value).sort()
@@ -391,6 +421,26 @@
       const embeddedWindow = appFrame.contentWindow
       if (embeddedOrigin === undefined || embeddedWindow === null) return
       if (event.source !== embeddedWindow || event.origin !== embeddedOrigin) return
+      if (isExternalLinkRequest(event.data)) {
+        const response = {
+          channel: externalLinkChannel,
+          version: externalLinkVersion,
+          type: 'open-response',
+          requestId: event.data.requestId,
+        }
+        try {
+          const invoke = window.__TAURI__?.core?.invoke
+          if (typeof invoke !== 'function') throw new Error('Desktop external-link bridge is unavailable')
+          await invoke('open_external_url', { url: event.data.url })
+          response.ok = true
+        }
+        catch (error) {
+          response.ok = false
+          response.error = String(error instanceof Error ? error.message : error).slice(0, 2048)
+        }
+        embeddedWindow.postMessage(response, embeddedOrigin)
+        return
+      }
       if (isMarketplaceLinkRequest(event.data)) {
         const response = {
           channel: marketplaceLinkChannel,

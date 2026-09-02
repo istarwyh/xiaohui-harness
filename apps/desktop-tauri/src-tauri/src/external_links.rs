@@ -1,6 +1,23 @@
-//! Restricted external links requested by the embedded Marketplace Client.
+//! Restricted external links requested by embedded XiaoHui Clients.
 
 use url::Url;
+
+const MAX_EXTERNAL_URL_LENGTH: usize = 4096;
+
+fn validate_external_url(value: &str) -> Result<Url, String> {
+    if value.is_empty() || value.len() > MAX_EXTERNAL_URL_LENGTH {
+        return Err("external link length is invalid".into());
+    }
+    let url = Url::parse(value).map_err(|_| "external link is not a valid URL".to_string())?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err("external links require a credential-free HTTP or HTTPS URL".into());
+    }
+    Ok(url)
+}
 
 fn valid_segment(value: &str) -> bool {
     !value.is_empty()
@@ -69,9 +86,46 @@ pub fn open_marketplace_url(url: String) -> Result<(), String> {
     tauri_plugin_opener::open_url(url.as_str(), None::<&str>).map_err(|error| error.to_string())
 }
 
+/// Open one validated HTTP(S) URL in the system browser.
+#[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    let url = validate_external_url(&url)?;
+    tauri_plugin_opener::open_url(url.as_str(), None::<&str>).map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::validate_marketplace_url;
+    use super::{validate_external_url, validate_marketplace_url};
+
+    #[test]
+    fn external_links_accept_credential_free_http_destinations() {
+        for url in [
+            "https://github.com/gitroomhq/postiz-app",
+            "https://example.com:8443/docs?q=x#part",
+            "http://127.0.0.1:8080/status",
+        ] {
+            assert_eq!(validate_external_url(url).unwrap().as_str(), url);
+        }
+    }
+
+    #[test]
+    fn external_links_reject_unsafe_or_malformed_destinations() {
+        for url in [
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "data:text/html,hello",
+            "mailto:user@example.com",
+            "https://user@example.com/private",
+            "https://user:secret@example.com/private",
+            "/internal/route",
+            "",
+        ] {
+            assert!(validate_external_url(url).is_err(), "accepted {url}");
+        }
+        assert!(
+            validate_external_url(&format!("https://example.com/{}", "a".repeat(4096))).is_err()
+        );
+    }
 
     #[test]
     fn marketplace_links_accept_only_repository_and_npm_destinations() {

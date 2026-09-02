@@ -21,6 +21,7 @@ import {
 } from './BrandSettingsRow.tsx'
 import { ApplicationLifecycleRow } from './ApplicationLifecycleRow.tsx'
 import { NetworkProxyRow } from './NetworkProxyRow.tsx'
+import { installDesktopExternalLinks } from './desktop-external-links.ts'
 import { en, zh, type PersonalWorkbenchKey } from './locales.ts'
 import { installPersonalWorkbenchStyles } from './styles.ts'
 
@@ -134,6 +135,7 @@ export function apply(ctx: ClientContext): void {
     () => ctx.locale.register(SETTINGS_LOCALE_NAMESPACE, { zh, en }),
     'personal-workbench: settings dictionaries',
   )
+  installDesktopExternalLinks(ctx as Context, ctx.locale.bind(SETTINGS_LOCALE_NAMESPACE))
 
   installPersonalBrandOccupants(ctx, scope)
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({

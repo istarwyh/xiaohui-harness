@@ -45,6 +45,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             chrome::set_close_action,
             chrome::restart_app,
+            external_links::open_external_url,
             external_links::open_marketplace_url,
             network_proxy::get_network_proxy_settings,
             network_proxy::save_network_proxy_settings,

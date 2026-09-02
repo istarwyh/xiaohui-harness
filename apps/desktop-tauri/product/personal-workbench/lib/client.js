@@ -811,6 +811,253 @@ function localizedProxyError(error, t) {
   return `${t("proxy.error.generic")} ${error}`;
 }
 
+// src/client/desktop-external-links.ts
+var DESKTOP_EXTERNAL_LINK_CHANNEL = "xiaohui.desktop.external-link";
+var DESKTOP_EXTERNAL_LINK_VERSION = 1;
+var MAX_EXTERNAL_URL_LENGTH = 4096;
+var RESPONSE_TIMEOUT_MS = 5e3;
+var REQUEST_ID_PATTERN3 = /^[A-Za-z0-9_-]{1,64}$/;
+function resolveDesktopExternalHttpUrl(value, currentOrigin) {
+  if (value.length === 0 || value.length > MAX_EXTERNAL_URL_LENGTH) return void 0;
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol) || url.hostname === "" || url.username !== "" || url.password !== "" || url.origin === currentOrigin || url.href.length > MAX_EXTERNAL_URL_LENGTH) return void 0;
+    return url.href;
+  } catch {
+    return void 0;
+  }
+}
+function readDesktopExternalLinkResponse(value, requestId) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return void 0;
+  const response = value;
+  if (response.channel !== DESKTOP_EXTERNAL_LINK_CHANNEL || response.version !== DESKTOP_EXTERNAL_LINK_VERSION || response.type !== "open-response" || response.requestId !== requestId || typeof response.ok !== "boolean") return void 0;
+  const expectedKeys = response.ok ? "channel,ok,requestId,type,version" : "channel,error,ok,requestId,type,version";
+  if (Object.keys(response).sort().join(",") !== expectedKeys) return void 0;
+  if (!response.ok && (typeof response.error !== "string" || response.error.length > 2048)) {
+    return void 0;
+  }
+  return response;
+}
+function createRequestId3() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function requestDesktopExternalLinkOpen(url, options = {}) {
+  const target = options.target ?? window;
+  if (target.parent === target) return Promise.reject(new Error("desktop-shell-unavailable"));
+  const requestId = options.requestId ?? createRequestId3();
+  if (!REQUEST_ID_PATTERN3.test(requestId)) return Promise.reject(new Error("invalid-request-id"));
+  return new Promise((resolve, reject) => {
+    const parent = target.parent;
+    const onMessage = (event) => {
+      if (event.source !== parent) return;
+      const response = readDesktopExternalLinkResponse(event.data, requestId);
+      if (response === void 0) return;
+      cleanup();
+      if (response.ok) resolve();
+      else reject(new Error(response.error));
+    };
+    const timeout = target.setTimeout(() => {
+      cleanup();
+      reject(new Error("desktop-shell-unavailable"));
+    }, options.timeoutMs ?? RESPONSE_TIMEOUT_MS);
+    const cleanup = () => {
+      target.clearTimeout(timeout);
+      target.removeEventListener("message", onMessage);
+    };
+    target.addEventListener("message", onMessage);
+    parent.postMessage({
+      channel: DESKTOP_EXTERNAL_LINK_CHANNEL,
+      version: DESKTOP_EXTERNAL_LINK_VERSION,
+      type: "open-request",
+      requestId,
+      url
+    }, "*");
+  });
+}
+function anchorFromEventTarget(target) {
+  if (target instanceof Element) return target.closest("a[href]");
+  if (target instanceof Node) return target.parentElement?.closest("a[href]") ?? null;
+  return null;
+}
+function externalUrlFromAnchor(anchor) {
+  if (anchor === null || anchor.target !== "_blank" || !anchor.relList.contains("noopener") || anchor.hasAttribute("download")) return void 0;
+  const href = anchor.getAttribute("href");
+  return href === null ? void 0 : resolveDesktopExternalHttpUrl(href, window.location.origin);
+}
+async function copyLinkAddress(value) {
+  try {
+    if (navigator.clipboard?.writeText !== void 0) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+  } catch {
+  }
+  const field = document.createElement("textarea");
+  field.value = value;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.append(field);
+  field.select();
+  const copied = document.execCommand("copy");
+  field.remove();
+  if (!copied) throw new Error("clipboard-unavailable");
+}
+function installDesktopExternalLinks(ctx, t) {
+  ctx.effect(() => {
+    if (typeof window === "undefined" || window.parent === window) return () => {
+    };
+    const menu = document.createElement("div");
+    menu.className = "dpw-link-menu";
+    menu.hidden = true;
+    menu.setAttribute("role", "menu");
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "dpw-link-menu-item";
+    openButton.setAttribute("role", "menuitem");
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "dpw-link-menu-item";
+    copyButton.setAttribute("role", "menuitem");
+    const status = document.createElement("div");
+    status.className = "dpw-link-menu-status";
+    status.hidden = true;
+    menu.append(openButton, copyButton, status);
+    document.body.append(menu);
+    let selectedUrl;
+    const markedAnchors = /* @__PURE__ */ new Set();
+    let statusTimer;
+    const clearStatusTimer = () => {
+      if (statusTimer !== void 0) window.clearTimeout(statusTimer);
+      statusTimer = void 0;
+    };
+    const hideMenu = () => {
+      clearStatusTimer();
+      selectedUrl = void 0;
+      menu.hidden = true;
+    };
+    const positionMenu = (x, y) => {
+      menu.style.left = `${Math.max(8, x)}px`;
+      menu.style.top = `${Math.max(8, y)}px`;
+      const bounds = menu.getBoundingClientRect();
+      menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - bounds.width - 8))}px`;
+      menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - bounds.height - 8))}px`;
+    };
+    const showStatus = (message, x, y) => {
+      selectedUrl = void 0;
+      openButton.hidden = true;
+      copyButton.hidden = true;
+      status.hidden = false;
+      status.textContent = message;
+      menu.hidden = false;
+      positionMenu(x, y);
+      clearStatusTimer();
+      statusTimer = window.setTimeout(hideMenu, 2500);
+    };
+    const openUrl = (url, x, y) => {
+      void requestDesktopExternalLinkOpen(url).catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        showStatus(`${t("link.error.open")} ${detail}`, x, y);
+      });
+    };
+    const onClick = (event) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      const url = externalUrlFromAnchor(anchorFromEventTarget(event.target));
+      if (url === void 0) return;
+      event.preventDefault();
+      hideMenu();
+      openUrl(url, event.clientX, event.clientY);
+    };
+    const onContextMenu = (event) => {
+      const url = externalUrlFromAnchor(anchorFromEventTarget(event.target));
+      if (url === void 0) {
+        hideMenu();
+        return;
+      }
+      event.preventDefault();
+      clearStatusTimer();
+      selectedUrl = url;
+      openButton.hidden = false;
+      copyButton.hidden = false;
+      status.hidden = true;
+      openButton.textContent = t("link.menu.open");
+      copyButton.textContent = t("link.menu.copy");
+      menu.hidden = false;
+      positionMenu(event.clientX, event.clientY);
+      openButton.focus();
+    };
+    const onMouseOver = (event) => {
+      const anchor = anchorFromEventTarget(event.target);
+      const url = externalUrlFromAnchor(anchor);
+      if (anchor === null || url === void 0) return;
+      markedAnchors.add(anchor);
+      anchor.classList.add("dpw-desktop-external-link");
+      if (!anchor.hasAttribute("title")) {
+        anchor.title = url;
+        anchor.dataset.xiaohuiExternalLinkTitle = "true";
+      }
+    };
+    const onDocumentPointer = (event) => {
+      if (!menu.hidden && event.target instanceof Node && !menu.contains(event.target)) hideMenu();
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") hideMenu();
+    };
+    const onOpen = () => {
+      const url = selectedUrl;
+      const bounds = menu.getBoundingClientRect();
+      hideMenu();
+      if (url !== void 0) openUrl(url, bounds.left, bounds.top);
+    };
+    const onCopy = () => {
+      const url = selectedUrl;
+      const bounds = menu.getBoundingClientRect();
+      if (url === void 0) return;
+      void copyLinkAddress(url).then(
+        () => {
+          showStatus(t("link.copy.done"), bounds.left, bounds.top);
+        },
+        () => {
+          showStatus(t("link.error.copy"), bounds.left, bounds.top);
+        }
+      );
+    };
+    document.addEventListener("click", onClick);
+    document.addEventListener("contextmenu", onContextMenu);
+    document.addEventListener("mouseover", onMouseOver);
+    document.addEventListener("pointerdown", onDocumentPointer);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("blur", hideMenu);
+    window.addEventListener("resize", hideMenu);
+    window.addEventListener("scroll", hideMenu, true);
+    openButton.addEventListener("click", onOpen);
+    copyButton.addEventListener("click", onCopy);
+    return () => {
+      hideMenu();
+      document.removeEventListener("click", onClick);
+      document.removeEventListener("contextmenu", onContextMenu);
+      document.removeEventListener("mouseover", onMouseOver);
+      document.removeEventListener("pointerdown", onDocumentPointer);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("blur", hideMenu);
+      window.removeEventListener("resize", hideMenu);
+      window.removeEventListener("scroll", hideMenu, true);
+      openButton.removeEventListener("click", onOpen);
+      copyButton.removeEventListener("click", onCopy);
+      markedAnchors.forEach((anchor) => {
+        anchor.classList.remove("dpw-desktop-external-link");
+        if (anchor.dataset.xiaohuiExternalLinkTitle === "true") {
+          anchor.removeAttribute("title");
+          delete anchor.dataset.xiaohuiExternalLinkTitle;
+        }
+      });
+      menu.remove();
+    };
+  }, "personal-workbench: desktop external links");
+}
+
 // src/client/locales.ts
 var zh = {
   "title": "\u6211\u7684\u5DE5\u4F5C\u53F0",
@@ -831,6 +1078,11 @@ var zh = {
   "error.name": "\u8BF7\u8F93\u5165\u5DE5\u4F5C\u53F0\u540D\u79F0\u3002",
   "error.read": "\u56FE\u7247\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002",
   "error.save": "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u6587\u4EF6\u540E\u91CD\u8BD5\u3002",
+  "link.menu.open": "\u6253\u5F00\u94FE\u63A5",
+  "link.menu.copy": "\u590D\u5236\u94FE\u63A5\u5730\u5740",
+  "link.copy.done": "\u94FE\u63A5\u5730\u5740\u5DF2\u590D\u5236",
+  "link.error.open": "\u65E0\u6CD5\u6253\u5F00\u94FE\u63A5\uFF1A",
+  "link.error.copy": "\u65E0\u6CD5\u590D\u5236\u94FE\u63A5\u5730\u5740\u3002",
   "proxy.title": "\u7F51\u7EDC\u4EE3\u7406",
   "proxy.description": "\u4E3A XiaoHui Harness\u3001\u79C1\u6709 Host\u3001\u63D2\u4EF6\u548C\u5E94\u7528\u66F4\u65B0\u7EDF\u4E00\u8BBE\u7F6E\u7F51\u7EDC\u4EE3\u7406\u3002\u4FDD\u5B58\u540E\u4F1A\u91CD\u542F\u5E94\u7528\u3002",
   "proxy.desktop-only": "\u8BF7\u5728 XiaoHui Harness \u684C\u9762\u5E94\u7528\u4E2D\u914D\u7F6E\u7F51\u7EDC\u4EE3\u7406\u3002",
@@ -907,6 +1159,11 @@ var en = {
   "error.name": "Enter a workbench name.",
   "error.read": "The image could not be read. Try again.",
   "error.save": "Could not save. Check the settings document and try again.",
+  "link.menu.open": "Open link",
+  "link.menu.copy": "Copy link address",
+  "link.copy.done": "Link address copied",
+  "link.error.open": "Could not open link:",
+  "link.error.copy": "Could not copy the link address.",
   "proxy.title": "Network proxy",
   "proxy.description": "Configure one network proxy for XiaoHui Harness, its private Host, plugins, and application updates. Saving restarts the app.",
   "proxy.desktop-only": "Configure the network proxy in the XiaoHui Harness desktop application.",
@@ -983,6 +1240,10 @@ var PERSONAL_WORKBENCH_CSS = `
 .dpw-button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 13px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer}
 .dpw-button-primary{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}.dpw-button-primary:hover:not(:disabled){border-color:var(--dsw-alias-button-primary-hover);background:var(--dsw-alias-button-primary-hover)}.dpw-button:disabled{cursor:not-allowed;opacity:.5}
 .dpw-error{font-size:13px;color:var(--dsw-alias-state-error-primary)}.dpw-success{color:var(--dsw-alias-state-success-primary)}
+.dpw-desktop-external-link{cursor:pointer}
+.dpw-link-menu{position:fixed;z-index:2147483647;display:grid;min-width:180px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 10px 30px rgb(0 0 0 / .24)}
+.dpw-link-menu[hidden]{display:none}.dpw-link-menu-item{padding:8px 10px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer}
+.dpw-link-menu-item:hover,.dpw-link-menu-item:focus-visible{outline:0;background:var(--dsw-alias-bg-layer-2)}.dpw-link-menu-status{max-width:320px;padding:8px 10px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.45;overflow-wrap:anywhere}
 @media (max-width:720px){.dpw-fields{grid-template-columns:1fr}}
 `;
 function installPersonalWorkbenchStyles(ctx) {
@@ -1069,6 +1330,7 @@ function apply(ctx) {
     () => ctx.locale.register(SETTINGS_LOCALE_NAMESPACE, { zh, en }),
     "personal-workbench: settings dictionaries"
   );
+  installDesktopExternalLinks(ctx, ctx.locale.bind(SETTINGS_LOCALE_NAMESPACE));
   installPersonalBrandOccupants(ctx, scope);
   ctx.slots.inject("settings.general.item", () => ctx.slots.register({
     name: "settings.general.item",

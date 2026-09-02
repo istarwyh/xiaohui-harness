@@ -1,7 +1,7 @@
 {
   "name": "dsh-personal-workbench",
   "version": "0.1.0",
-  "description": "XiaoHui workbench branding, application lifecycle, and network proxy controls",
+  "description": "XiaoHui workbench branding, desktop links, application lifecycle, and network proxy controls",
   "type": "module",
   "private": true,
   "main": "index.js",

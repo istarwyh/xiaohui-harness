@@ -20,6 +20,10 @@ export const PERSONAL_WORKBENCH_CSS = `
 .dpw-button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 13px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer}
 .dpw-button-primary{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}.dpw-button-primary:hover:not(:disabled){border-color:var(--dsw-alias-button-primary-hover);background:var(--dsw-alias-button-primary-hover)}.dpw-button:disabled{cursor:not-allowed;opacity:.5}
 .dpw-error{font-size:13px;color:var(--dsw-alias-state-error-primary)}.dpw-success{color:var(--dsw-alias-state-success-primary)}
+.dpw-desktop-external-link{cursor:pointer}
+.dpw-link-menu{position:fixed;z-index:2147483647;display:grid;min-width:180px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 10px 30px rgb(0 0 0 / .24)}
+.dpw-link-menu[hidden]{display:none}.dpw-link-menu-item{padding:8px 10px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer}
+.dpw-link-menu-item:hover,.dpw-link-menu-item:focus-visible{outline:0;background:var(--dsw-alias-bg-layer-2)}.dpw-link-menu-status{max-width:320px;padding:8px 10px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.45;overflow-wrap:anywhere}
 @media (max-width:720px){.dpw-fields{grid-template-columns:1fr}}
 `
 

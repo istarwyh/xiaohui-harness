@@ -1,17 +1,17 @@
-# XiaoHui Harness 0.2.10
+# XiaoHui Harness 0.2.11
 
 ## English
 
-- Makes enterprise HTTPS interception work with trusted macOS certificates. Native reqwest clients use the macOS platform verifier, and every XiaoHui-managed Node process enables the system CA store through `--use-system-ca`.
-- Reports the desktop-native and running Node Host connection outcomes separately, including bounded certificate codes such as `UNKNOWN_ISSUER` and `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, so one successful route cannot hide the other route's failure.
-- Keeps certificate verification enabled and directs certificate failures to the enterprise root trust in macOS Keychain. The application-wide proxy continues to cover GPT OAuth providers, plugins, package installation, runtime provisioning, and signed updates after restart.
+- Opens assistant Markdown `http://` and `https://` links in the operating system's default browser from the XiaoHui desktop chat.
+- Adds a link context menu with **Open link** and **Copy link address**, and shows the normalized destination while hovering.
+- Preserves Harness internal navigation and local references. External links pass a protocol and credential whitelist in both the WebView shell and native Tauri command; dangerous schemes such as `javascript:`, `file:`, and `data:` are rejected.
 
 The application is not yet signed or notarized with an Apple Developer identity.
 
 ## 中文
 
-- 支持使用 macOS 已信任证书的企业 HTTPS 拦截。原生 reqwest Client 使用 macOS 平台验证器，所有由 XiaoHui 管理的 Node 进程都会通过 `--use-system-ca` 启用系统 CA Store。
-- 分别展示桌面原生链路与运行中 Node Host 的连接结果，包括 `UNKNOWN_ISSUER`、`UNABLE_TO_VERIFY_LEAF_SIGNATURE` 等有界证书错误码，避免一条链路成功掩盖另一条链路失败。
-- 保持证书校验开启，并在证书失败时提示检查 macOS Keychain 中的企业根证书信任。应用全局代理在重启后继续统一覆盖 GPT OAuth Provider、插件、Package 安装、Runtime 预配和签名更新。
+- 支持在 XiaoHui 桌面聊天中点击助手回复里的 Markdown `http://` 和 `https://` 链接，并通过操作系统默认浏览器打开。
+- 新增链接右键菜单，可选择「打开链接」或「复制链接地址」；鼠标悬停时会显示规范化后的目标地址。
+- 保持 Harness 内部导航与本地引用不变。外链会在 WebView Shell 和 Tauri 原生命令两层执行协议与凭据白名单校验，拒绝 `javascript:`、`file:`、`data:` 等危险协议。
 
 当前应用尚未使用 Apple Developer 身份完成代码签名与公证。

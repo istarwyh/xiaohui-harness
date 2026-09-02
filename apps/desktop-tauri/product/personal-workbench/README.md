@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 This first-party XiaoHui Harness product plugin owns three General settings cards. **Settings → General → My Workbench** lets a user replace the sidebar workbench name and Logo, preview the draft, and restore the XiaoHui fallback. **Settings → General → Network proxy** configures one application-wide Direct, macOS system, or custom proxy policy, tests both the desktop draft route and the active Node Host route against ChatGPT, and saves it before restarting XiaoHui. **Settings → General → Application lifecycle** asks the trusted desktop shell to run the signed application updater or restart the complete application after stopping its private Host. A restart loads plugins installed through Plugin Marketplace. Desktop actions remain visible but disabled in standalone `dsh web`; no browser request can choose an arbitrary Tauri command, proxy credentials are not accepted, and the update action never refreshes plugin source on an end-user machine because bundled product plugins advance with the signed application release.
 
+In the XiaoHui desktop application, safe external links rendered by assistant Markdown open in the operating system's default browser. The Client handles only absolute, credential-free HTTP and HTTPS anchors that the shared Markdown renderer marked for a new browsing context, while same-origin and relative links keep their existing Web behavior. Hovering exposes the normalized destination, and the custom context menu can open or copy the link. The iframe protocol, shell validator, and Rust command independently reject other schemes and unexpected message fields. Standalone `dsh web` keeps the browser's ordinary link behavior.
+
 The workbench identity is stored in the current DSH Profile under the `personal-workbench` namespace:
 
 ```yaml
@@ -32,3 +34,4 @@ None; changing the workbench identity does not assemble or send a provider reque
 - **Proxy authentication and PAC are not stored or evaluated** — use credential-free fixed endpoints reachable by the application process; WSL targets must also be reachable from the WSL network namespace.
 - **Proxy changes are restart-scoped** — Test uses the draft settings, while running Host and updater processes retain the previously activated policy until the application restarts.
 - **Application lifecycle actions are desktop-only** — the workbench Client can request only the fixed signed-update and restart flows; the shell accepts them only from the active Host iframe at its exact Origin.
+- **External-link handling is desktop-only** — only safe HTTP(S) assistant links are delegated to the system browser; local routes and file mentions remain owned by the embedded Web application.

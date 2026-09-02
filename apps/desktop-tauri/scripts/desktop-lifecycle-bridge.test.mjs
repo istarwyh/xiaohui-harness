@@ -17,10 +17,12 @@ const validators = Function(
   'desktopLifecycleRequestId',
   'networkProxyChannel',
   'networkProxyVersion',
+  'externalLinkChannel',
+  'externalLinkVersion',
   'marketplaceLinkChannel',
   'marketplaceLinkVersion',
-  `${validatorSource}; return { readDesktopLifecycleAction, readNetworkProxyAction, isMarketplaceLinkRequest }`,
-)('xiaohui.desktop.lifecycle', 1, /^[A-Za-z0-9_-]{1,64}$/, 'xiaohui.desktop.network-proxy', 2, 'xiaohui.desktop.marketplace-link', 1)
+  `${validatorSource}; return { readDesktopLifecycleAction, readNetworkProxyAction, isExternalLinkRequest, isMarketplaceLinkRequest }`,
+)('xiaohui.desktop.lifecycle', 1, /^[A-Za-z0-9_-]{1,64}$/, 'xiaohui.desktop.network-proxy', 2, 'xiaohui.desktop.external-link', 1, 'xiaohui.desktop.marketplace-link', 1)
 
 test('desktop shell accepts only fixed lifecycle request fields and actions', () => {
   const request = {
@@ -63,6 +65,35 @@ test('desktop shell accepts only restricted Marketplace repository and npm links
   assert.equal(validators.isMarketplaceLinkRequest({ ...request, extra: true }), false)
 })
 
+test('desktop shell accepts only credential-free HTTP and HTTPS external links', () => {
+  const request = {
+    channel: 'xiaohui.desktop.external-link',
+    version: 1,
+    type: 'open-request',
+    requestId: 'link_1',
+    url: 'https://github.com/gitroomhq/postiz-app',
+  }
+  for (const url of [
+    'https://github.com/gitroomhq/postiz-app',
+    'https://example.com:8443/docs?q=x#part',
+    'http://127.0.0.1:8080/status',
+  ]) {
+    assert.equal(validators.isExternalLinkRequest({ ...request, url }), true, url)
+  }
+  for (const url of [
+    'javascript:alert(1)',
+    'file:///etc/passwd',
+    'data:text/html,hello',
+    'mailto:user@example.com',
+    'https://user@example.com/private',
+    '/internal/route',
+  ]) {
+    assert.equal(validators.isExternalLinkRequest({ ...request, url }), false, url)
+  }
+  assert.equal(validators.isExternalLinkRequest({ ...request, extra: true }), false)
+  assert.equal(validators.isExternalLinkRequest({ ...request, url: `https://example.com/${'a'.repeat(4096)}` }), false)
+})
+
 test('desktop shell accepts only fixed network proxy requests and bounded settings', () => {
   const settings = {
     mode: 'custom',
@@ -99,6 +130,7 @@ test('desktop shell binds lifecycle commands to the active Host iframe', () => {
   assert.match(shell, /await invoke\('get_network_proxy_settings'\)/u)
   assert.match(shell, /await invoke\('test_network_proxy_settings', \{ settings: event\.data\.settings \}\)/u)
   assert.match(shell, /await invoke\('save_network_proxy_settings', \{ settings: event\.data\.settings \}\)/u)
+  assert.match(shell, /await invoke\('open_external_url', \{ url: event\.data\.url \}\)/u)
   assert.match(shell, /await invoke\('open_marketplace_url', \{ url: event\.data\.url \}\)/u)
   assert.match(shell, /embeddedWindow\.postMessage\(response, embeddedOrigin\)/u)
   assert.doesNotMatch(shell, /invoke\(event\.data/u)

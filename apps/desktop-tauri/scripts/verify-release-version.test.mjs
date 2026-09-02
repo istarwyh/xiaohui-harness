@@ -30,5 +30,5 @@ test('validateReleaseVersions rejects source and tag drift', () => {
 })
 
 test('repository desktop version sources are aligned', () => {
-  assert.equal(verifyReleaseVersion('xiaohui-v0.2.10').version, '0.2.10')
+  assert.equal(verifyReleaseVersion('xiaohui-v0.2.11').version, '0.2.11')
 })
